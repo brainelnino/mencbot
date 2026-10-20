@@ -14,10 +14,11 @@ export function useAdmin(userId: string | undefined) {
     queryKey: ["admin-self", userId],
     enabled: !!userId,
     queryFn: async (): Promise<AdminContext> => {
+      if (!userId) return null;
       const { data, error } = await supabase
         .from("admin_accounts")
         .select("id,is_owner,display_label,is_active,admin_permission_grants(permission)")
-        .eq("user_id", userId!)
+        .eq("user_id", userId)
         .maybeSingle();
       if (error) throw error;
       if (!data || !data.is_active) return null;

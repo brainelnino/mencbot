@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Dashibodi — EL-NINO" },
@@ -48,7 +49,7 @@ function AdminLayout() {
   }, [loading, user, nav]);
 
   if (loading || !user || admin.isLoading) return <div className="p-6"><Loading /></div>;
-  if (!admin.data) return <NotAdmin />;
+  if (!admin.data?.isOwner) return <NotAdmin />;
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
@@ -108,8 +109,9 @@ function SelfCard({ label, owner }: { label: string; owner: boolean }) {
 
 function SignOut() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   return (
-    <Button variant="ghost" size="icon" aria-label="Toka" onClick={async () => { await supabase.auth.signOut(); nav({ to: "/ingia" }); }}>
+    <Button variant="ghost" size="icon" aria-label="Toka" onClick={async () => { await qc.cancelQueries(); qc.clear(); await supabase.auth.signOut(); nav({ to: "/ingia", replace: true }); }}>
       <LogOut className="h-4 w-4" />
     </Button>
   );

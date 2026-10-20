@@ -15,6 +15,13 @@
       "when": 1792527924020,
       "tag": "0001_telegram_phase2",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792529893825,
+      "tag": "0002_private_delivery_and_telegram_assistants",
+      "breakpoints": true
     }
   ]
 }

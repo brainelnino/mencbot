@@ -15,6 +15,7 @@ export type Classified =
   | { kind: "start"; userId: number; chatId: number }
   | { kind: "private_text"; userId: number; chatId: number; text: string; messageId: number }
   | { kind: "private_other"; userId: number; chatId: number }
+  | { kind: "admin_command"; userId: number; chatId: number; command: "admin" | "zuia" | "rudisha"; label?: string }
   | { kind: "group_link"; chatId: number; code: string; title: string | null }
   | { kind: "ignored"; reason: string };
 
@@ -26,6 +27,8 @@ export function classifyUpdate(u: TgUpdate): Classified {
   if (m.chat.type === "private") {
     if (!m.from) return { kind: "ignored", reason: "no_sender" };
     if (/^\/start(@\w+)?(\s|$)/.test(text)) return { kind: "start", userId: m.from.id, chatId: m.chat.id };
+    const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
+    if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
     if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), messageId: m.message_id };
     return { kind: "private_other", userId: m.from.id, chatId: m.chat.id };
   }
