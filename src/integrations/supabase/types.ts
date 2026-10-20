@@ -616,6 +616,38 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_admins: {
+        Row: {
+          admin_slot: number
+          appointed_at: string
+          id: string
+          is_active: boolean
+          member_id: string
+        }
+        Insert: {
+          admin_slot: number
+          appointed_at?: string
+          id?: string
+          is_active?: boolean
+          member_id: string
+        }
+        Update: {
+          admin_slot?: number
+          appointed_at?: string
+          id?: string
+          is_active?: boolean
+          member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telegram_admins_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: true
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       telegram_config: {
         Row: {
           bot_username: string | null
@@ -663,6 +695,57 @@ export type Database = {
           webhook_url?: string | null
         }
         Relationships: []
+      }
+      telegram_deliveries: {
+        Row: {
+          attempts: number
+          claimed_at: string | null
+          id: string
+          last_error: string | null
+          member_id: string
+          message_id: string
+          sent_at: string | null
+          status: string
+          telegram_message_id: number | null
+        }
+        Insert: {
+          attempts?: number
+          claimed_at?: string | null
+          id?: string
+          last_error?: string | null
+          member_id: string
+          message_id: string
+          sent_at?: string | null
+          status?: string
+          telegram_message_id?: number | null
+        }
+        Update: {
+          attempts?: number
+          claimed_at?: string | null
+          id?: string
+          last_error?: string | null
+          member_id?: string
+          message_id?: string
+          sent_at?: string | null
+          status?: string
+          telegram_message_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telegram_deliveries_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "telegram_deliveries_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       telegram_updates: {
         Row: {
@@ -751,8 +834,25 @@ export type Database = {
     }
     Functions: {
       allocate_identity: { Args: { _member_id: string }; Returns: string }
+      appoint_telegram_admin: {
+        Args: { _label: string; _slot: number }
+        Returns: string
+      }
       claim_ownership: { Args: { _display_label: string }; Returns: string }
+      claim_private_deliveries: {
+        Args: { _message_id: string }
+        Returns: {
+          body: string
+          chat_id: number
+          id: string
+          sender_label: string
+        }[]
+      }
       current_admin_id: { Args: never; Returns: string }
+      enqueue_private_message: {
+        Args: { _message_id: string }
+        Returns: undefined
+      }
       get_dashboard_stats: { Args: never; Returns: Json }
       get_public_messages: {
         Args: { _limit?: number }
@@ -764,6 +864,10 @@ export type Database = {
           reply_to_id: string
           sender_label: string
         }[]
+      }
+      get_telegram_admin_slot: {
+        Args: { _tg_user_id: number }
+        Returns: number
       }
       has_permission: {
         Args: { _perm: Database["public"]["Enums"]["admin_permission"] }
@@ -779,6 +883,18 @@ export type Database = {
           label: string
           member_id: string
         }[]
+      }
+      set_telegram_admin_active: {
+        Args: { _active: boolean; _id: string }
+        Returns: undefined
+      }
+      telegram_admin_set_member_status: {
+        Args: {
+          _label: string
+          _status: Database["public"]["Enums"]["member_status"]
+          _tg_user_id: number
+        }
+        Returns: boolean
       }
       write_audit: {
         Args: {
