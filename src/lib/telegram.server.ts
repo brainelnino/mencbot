@@ -81,7 +81,8 @@ export async function handleUpdate(update: TgUpdate) {
           }
           throw error;
         }
-        const row = data![0];
+        const row = data?.[0];
+        if (!row) throw new Error("Usajili haukurudisha utambulisho");
         await tg("sendMessage", { chat_id: c.chatId, text: row.is_new ? WELCOME_NEW(row.label) : WELCOME_BACK(row.label) });
         log("info", "registered", { is_new: row.is_new });
         break;
