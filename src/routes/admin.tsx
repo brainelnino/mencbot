@@ -133,7 +133,7 @@ function NotAdmin() {
     setBusy(true);
     const { error } = await supabase.rpc("claim_ownership", { _display_label: label });
     setBusy(false);
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     toast.success("Wewe sasa ni mmiliki wa mfumo.");
     qc.invalidateQueries();
   }

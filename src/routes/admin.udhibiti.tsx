@@ -85,7 +85,7 @@ function Terms() {
   function submit(e: FormEvent) {
     e.preventDefault();
     const v = term.trim();
-    if (v.length < 2 || v.length > 60) return toast.error("Neno liwe herufi 2–60");
+    if (v.length < 2 || v.length > 60) { toast.error("Neno liwe herufi 2–60"); return; }
     add.mutate(v);
   }
   return (

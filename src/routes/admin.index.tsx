@@ -11,7 +11,7 @@ function Overview() {
     queryFn: async () => {
       const { data, error } = await supabase.rpc("get_dashboard_stats");
       if (error) throw error;
-      return data as Record<string, number>;
+      return data as { members: number; active: number; published: number; pending_images: number; active_restrictions: number; activity_window: number };
     },
   });
   const events = useQuery({
