@@ -10,33 +10,145 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as IngiaRouteImport } from './routes/ingia'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminBrainRouteImport } from './routes/admin.brain'
+import { Route as AdminJamiiRouteImport } from './routes/admin.jamii'
+import { Route as AdminMipangilioRouteImport } from './routes/admin.mipangilio'
+import { Route as AdminUdhibitiRouteImport } from './routes/admin.udhibiti'
+import { Route as AdminWanachamaRouteImport } from './routes/admin.wanachama'
+import { Route as AdminWasimamiziRouteImport } from './routes/admin.wasimamizi'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IngiaRoute = IngiaRouteImport.update({
+  id: '/ingia',
+  path: '/ingia',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminBrainRoute = AdminBrainRouteImport.update({
+  id: '/brain',
+  path: '/brain',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminJamiiRoute = AdminJamiiRouteImport.update({
+  id: '/jamii',
+  path: '/jamii',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminMipangilioRoute = AdminMipangilioRouteImport.update({
+  id: '/mipangilio',
+  path: '/mipangilio',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminUdhibitiRoute = AdminUdhibitiRouteImport.update({
+  id: '/udhibiti',
+  path: '/udhibiti',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminWanachamaRoute = AdminWanachamaRouteImport.update({
+  id: '/wanachama',
+  path: '/wanachama',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminWasimamiziRoute = AdminWasimamiziRouteImport.update({
+  id: '/wasimamizi',
+  path: '/wasimamizi',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/ingia': typeof IngiaRoute
+  '/admin/brain': typeof AdminBrainRoute
+  '/admin/jamii': typeof AdminJamiiRoute
+  '/admin/mipangilio': typeof AdminMipangilioRoute
+  '/admin/udhibiti': typeof AdminUdhibitiRoute
+  '/admin/wanachama': typeof AdminWanachamaRoute
+  '/admin/wasimamizi': typeof AdminWasimamiziRoute
+  '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/ingia': typeof IngiaRoute
+  '/admin/brain': typeof AdminBrainRoute
+  '/admin/jamii': typeof AdminJamiiRoute
+  '/admin/mipangilio': typeof AdminMipangilioRoute
+  '/admin/udhibiti': typeof AdminUdhibitiRoute
+  '/admin/wanachama': typeof AdminWanachamaRoute
+  '/admin/wasimamizi': typeof AdminWasimamiziRoute
+  '/admin': typeof AdminIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/ingia': typeof IngiaRoute
+  '/admin/brain': typeof AdminBrainRoute
+  '/admin/jamii': typeof AdminJamiiRoute
+  '/admin/mipangilio': typeof AdminMipangilioRoute
+  '/admin/udhibiti': typeof AdminUdhibitiRoute
+  '/admin/wanachama': typeof AdminWanachamaRoute
+  '/admin/wasimamizi': typeof AdminWasimamiziRoute
+  '/admin/': typeof AdminIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/ingia'
+    | '/admin/brain'
+    | '/admin/jamii'
+    | '/admin/mipangilio'
+    | '/admin/udhibiti'
+    | '/admin/wanachama'
+    | '/admin/wasimamizi'
+    | '/admin/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/ingia'
+    | '/admin/brain'
+    | '/admin/jamii'
+    | '/admin/mipangilio'
+    | '/admin/udhibiti'
+    | '/admin/wanachama'
+    | '/admin/wasimamizi'
+    | '/admin'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/ingia'
+    | '/admin/brain'
+    | '/admin/jamii'
+    | '/admin/mipangilio'
+    | '/admin/udhibiti'
+    | '/admin/wanachama'
+    | '/admin/wasimamizi'
+    | '/admin/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  IngiaRoute: typeof IngiaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +160,98 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ingia': {
+      id: '/ingia'
+      path: '/ingia'
+      fullPath: '/ingia'
+      preLoaderRoute: typeof IngiaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/brain': {
+      id: '/admin/brain'
+      path: '/brain'
+      fullPath: '/admin/brain'
+      preLoaderRoute: typeof AdminBrainRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/jamii': {
+      id: '/admin/jamii'
+      path: '/jamii'
+      fullPath: '/admin/jamii'
+      preLoaderRoute: typeof AdminJamiiRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/mipangilio': {
+      id: '/admin/mipangilio'
+      path: '/mipangilio'
+      fullPath: '/admin/mipangilio'
+      preLoaderRoute: typeof AdminMipangilioRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/udhibiti': {
+      id: '/admin/udhibiti'
+      path: '/udhibiti'
+      fullPath: '/admin/udhibiti'
+      preLoaderRoute: typeof AdminUdhibitiRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/wanachama': {
+      id: '/admin/wanachama'
+      path: '/wanachama'
+      fullPath: '/admin/wanachama'
+      preLoaderRoute: typeof AdminWanachamaRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/wasimamizi': {
+      id: '/admin/wasimamizi'
+      path: '/wasimamizi'
+      fullPath: '/admin/wasimamizi'
+      preLoaderRoute: typeof AdminWasimamiziRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
+interface AdminRouteChildren {
+  AdminBrainRoute: typeof AdminBrainRoute
+  AdminJamiiRoute: typeof AdminJamiiRoute
+  AdminMipangilioRoute: typeof AdminMipangilioRoute
+  AdminUdhibitiRoute: typeof AdminUdhibitiRoute
+  AdminWanachamaRoute: typeof AdminWanachamaRoute
+  AdminWasimamiziRoute: typeof AdminWasimamiziRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminBrainRoute: AdminBrainRoute,
+  AdminJamiiRoute: AdminJamiiRoute,
+  AdminMipangilioRoute: AdminMipangilioRoute,
+  AdminUdhibitiRoute: AdminUdhibitiRoute,
+  AdminWanachamaRoute: AdminWanachamaRoute,
+  AdminWasimamiziRoute: AdminWasimamiziRoute,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRouteWithChildren,
+  IngiaRoute: IngiaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
