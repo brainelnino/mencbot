@@ -16,5 +16,6 @@
 - Admin pages are client-rendered under `/admin` and query with the browser client — why: they depend on the signed-in session.
 - UI strings live in `src/lib/i18n.ts` (Kiswahili first) — why: English is planned later.
 - Telegram updates enter only via `/api/public/telegram/webhook` (secret token derived from TELEGRAM_API_KEY) and are deduplicated by `telegram_updates.update_id` — why: Telegram retries deliveries.
-- Group posting happens only through `publishMessage` in `src/lib/telegram.server.ts`, which requires moderation approval and claims the row — why: one publication decision for web and group, no double posts.
+- Private member broadcasting happens through `publishMessage`, with database recipient snapshots and atomic six-row delivery claims; failed webhook responses drive Telegram retries — why: direct delivery survives partial failure without deliberately resending recorded successes.
+- Website permissions resolve to owner-only database helpers; Telegram assistants use a separate member-linked role table and service-only RPCs — why: assistants need no web credentials and cannot gain web access.
 - Telegram config is owner-only (RLS `is_owner`); the group is linked by a one-time `/unganisha CODE` command — why: the group reference stays private.

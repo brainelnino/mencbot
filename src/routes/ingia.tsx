@@ -8,6 +8,8 @@ import { TzFlag } from "@/components/brand/TzFlag";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { lovable } from "@/integrations/lovable";
+import { t } from "@/lib/i18n";
 
 export const Route = createFileRoute("/ingia")({
   head: () => ({
@@ -47,16 +49,26 @@ function AuthPage() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin + "/admin" },
+           options: { emailRedirectTo: window.location.origin + "/ingia" },
         });
         if (error) throw error;
-        toast.success("Angalia barua pepe yako kuthibitisha akaunti.");
+        toast.success(t.auth.confirm);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Imeshindikana");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function google() {
+    setBusy(true);
+    try {
+      const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: `${window.location.origin}/ingia` });
+      if (result.error) throw result.error;
+      if (result.redirected) return;
+    } catch (err) { toast.error(err instanceof Error ? err.message : t.auth.failed); }
+    finally { setBusy(false); }
   }
 
   return (
@@ -66,11 +78,12 @@ function AuthPage() {
         <Logo />
         <div className="flex flex-col gap-2">
           <TzFlag className="h-8 w-auto self-start rounded ring-1 ring-border" />
-          <h1 className="text-2xl font-bold">{mode === "in" ? "Karibu tena" : "Fungua akaunti"}</h1>
+          <h1 className="text-2xl font-bold">{t.auth.owner}</h1>
           <p className="text-sm text-muted-foreground">
-            Kwa wasimamizi pekee. Kufungua akaunti hakukupi ruhusa yoyote — mmiliki ndiye anayetoa ruhusa.
+            {t.auth.ownerOnly}
           </p>
         </div>
+        <Button variant="outline" size="lg" disabled={busy} onClick={google}>{t.auth.google}</Button>
         <form onSubmit={submit} className="flex flex-col gap-4">
           <div className="grid gap-1.5">
             <Label htmlFor="email">Barua pepe</Label>
@@ -84,9 +97,9 @@ function AuthPage() {
             {busy ? "Subiri…" : mode === "in" ? "Ingia" : "Jisajili"}
           </Button>
         </form>
-        <button type="button" onClick={() => setMode(mode === "in" ? "up" : "in")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+        <Button variant="ghost" type="button" onClick={() => setMode(mode === "in" ? "up" : "in")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
           {mode === "in" ? "Huna akaunti? Jisajili" : "Una akaunti? Ingia"}
-        </button>
+        </Button>
       </main>
     </div>
   );
