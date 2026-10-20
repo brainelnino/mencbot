@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { Loading, ErrorState, PageHeader, Pill } from "@/components/admin/States";
+import { Loading, ErrorState, PageHeader, Pill, NoAccess } from "@/components/admin/States";
+import { TelegramPanel } from "@/components/admin/TelegramPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -29,7 +30,7 @@ function SettingsPage() {
   const tg = useQuery({
     queryKey: ["tg"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("telegram_config").select("bot_username,webhook_registered").maybeSingle();
+      const { data, error } = await supabase.from("telegram_config").select("id").maybeSingle();
       if (error) throw error;
       return data;
     },
@@ -63,10 +64,7 @@ function SettingsPage() {
 
       <section>
         <h2 className="mb-3 text-sm font-semibold">Telegram</h2>
-        <div className="flex items-center justify-between rounded-xl border bg-card p-4 text-sm">
-          <span>{tg.data?.bot_username ? `@${tg.data.bot_username}` : "Bot haijasanidiwa"}</span>
-          <Pill tone={tg.data?.webhook_registered ? "ok" : "warn"}>{tg.data?.webhook_registered ? "Imeunganishwa" : "Haijaunganishwa"}</Pill>
-        </div>
+        {tg.data ? <TelegramPanel /> : <NoAccess />}
       </section>
     </div>
   );
