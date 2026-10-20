@@ -413,10 +413,15 @@ export type Database = {
           member_id: string | null
           moderation_reason: string | null
           moderation_status: Database["public"]["Enums"]["moderation_status"]
+          processing_status: string
+          publication_error: string | null
           publication_status: Database["public"]["Enums"]["publication_status"]
+          publish_attempts: number
           published_at: string | null
           reply_to_id: string | null
           sender_label: string
+          source_update_id: number | null
+          telegram_chat_message_ref: Json | null
           telegram_message_id: number | null
         }
         Insert: {
@@ -428,10 +433,15 @@ export type Database = {
           member_id?: string | null
           moderation_reason?: string | null
           moderation_status?: Database["public"]["Enums"]["moderation_status"]
+          processing_status?: string
+          publication_error?: string | null
           publication_status?: Database["public"]["Enums"]["publication_status"]
+          publish_attempts?: number
           published_at?: string | null
           reply_to_id?: string | null
           sender_label: string
+          source_update_id?: number | null
+          telegram_chat_message_ref?: Json | null
           telegram_message_id?: number | null
         }
         Update: {
@@ -443,10 +453,15 @@ export type Database = {
           member_id?: string | null
           moderation_reason?: string | null
           moderation_status?: Database["public"]["Enums"]["moderation_status"]
+          processing_status?: string
+          publication_error?: string | null
           publication_status?: Database["public"]["Enums"]["publication_status"]
+          publish_attempts?: number
           published_at?: string | null
           reply_to_id?: string | null
           sender_label?: string
+          source_update_id?: number | null
+          telegram_chat_message_ref?: Json | null
           telegram_message_id?: number | null
         }
         Relationships: [
@@ -604,24 +619,78 @@ export type Database = {
       telegram_config: {
         Row: {
           bot_username: string | null
+          group_link_code: string | null
+          group_link_expires_at: string | null
+          group_title: string | null
+          group_verified_at: string | null
           id: string
+          last_error: string | null
+          last_error_at: string | null
+          last_update_at: string | null
           public_group_chat_id: number | null
           updated_at: string
           webhook_registered: boolean
+          webhook_url: string | null
         }
         Insert: {
           bot_username?: string | null
+          group_link_code?: string | null
+          group_link_expires_at?: string | null
+          group_title?: string | null
+          group_verified_at?: string | null
           id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          last_update_at?: string | null
           public_group_chat_id?: number | null
           updated_at?: string
           webhook_registered?: boolean
+          webhook_url?: string | null
         }
         Update: {
           bot_username?: string | null
+          group_link_code?: string | null
+          group_link_expires_at?: string | null
+          group_title?: string | null
+          group_verified_at?: string | null
           id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          last_update_at?: string | null
           public_group_chat_id?: number | null
           updated_at?: string
           webhook_registered?: boolean
+          webhook_url?: string | null
+        }
+        Relationships: []
+      }
+      telegram_updates: {
+        Row: {
+          attempts: number
+          error: string | null
+          processed_at: string | null
+          received_at: string
+          status: string
+          update_id: number
+          update_kind: string
+        }
+        Insert: {
+          attempts?: number
+          error?: string | null
+          processed_at?: string | null
+          received_at?: string
+          status?: string
+          update_id: number
+          update_kind: string
+        }
+        Update: {
+          attempts?: number
+          error?: string | null
+          processed_at?: string | null
+          received_at?: string
+          status?: string
+          update_id?: number
+          update_kind?: string
         }
         Relationships: []
       }
@@ -703,6 +772,14 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
       owner_exists: { Args: never; Returns: boolean }
+      register_telegram_member: {
+        Args: { _tg_user_id: number }
+        Returns: {
+          is_new: boolean
+          label: string
+          member_id: string
+        }[]
+      }
       write_audit: {
         Args: {
           _action: string
