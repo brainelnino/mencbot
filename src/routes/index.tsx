@@ -8,6 +8,7 @@ import { MessageList, type PublicMessage } from "@/components/chat/MessageList";
 import { Loading, ErrorState } from "@/components/admin/States";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
+import { useAuth } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const { user } = useAuth();
   const feed = useQuery({
     queryKey: ["public-feed"],
     queryFn: async () => {
@@ -40,7 +42,7 @@ function Index() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Logo />
           <Button asChild variant="outline" size="sm">
-            <Link to="/ingia">Wasimamizi</Link>
+            <Link to={user ? "/admin" : "/ingia"}>{t.auth.owner}</Link>
           </Button>
         </div>
         <div className="flag-rule" />
@@ -56,7 +58,7 @@ function Index() {
           <ul className="grid gap-3 text-sm">
             {[
               { i: MessagesSquare, h: "Mazungumzo ya wazi", p: "Kila mwanachama anaonekana kwa namba au herufi tu — kama 15, C au 122." },
-              { i: ShieldCheck, h: "Usalama kwanza", p: "Ujumbe unakaguliwa kabla ya kuchapishwa. Utambulisho wako halisi haufichuliwi." },
+              { i: ShieldCheck, h: "Usalama kwanza", p: "Utambulisho wako halisi haufichuliwi." },
               { i: Brain, h: "EL-NINO Brain", p: "Uchambuzi wa mahitaji ya jamii — unakuja hivi karibuni." },
             ].map(({ i: Icon, h, p }) => (
               <li key={h} className="flex gap-3 rounded-xl border bg-card p-4">
@@ -70,7 +72,7 @@ function Index() {
           </ul>
           <div className="flex items-center gap-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
             <Send className="h-4 w-4 text-tz-blue" />
-            Kujiunga kupitia Telegram bot — {t.notConnected.toLowerCase()}.
+            <a href="https://t.me/NinoChatBot" target="_blank" rel="noreferrer">@NinoChatBot</a>
           </div>
         </section>
 
@@ -86,15 +88,15 @@ function Index() {
               <Loading />
             ) : feed.error ? (
               <ErrorState error={feed.error} />
-            ) : feed.data!.length === 0 ? (
+            ) : (feed.data ?? []).length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 py-12 text-center">
                 <p className="font-semibold">Bado hakuna ujumbe uliochapishwa.</p>
                 <p className="max-w-xs text-xs text-muted-foreground">
-                  Ujumbe ulioidhinishwa utaonekana hapa mara Telegram bot itakapounganishwa.
+                  @NinoChatBot
                 </p>
               </div>
             ) : (
-              <MessageList messages={feed.data!} />
+              <MessageList messages={feed.data ?? []} />
             )}
           </div>
         </section>

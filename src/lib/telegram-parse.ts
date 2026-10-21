@@ -15,7 +15,7 @@ export type Classified =
   | { kind: "start"; userId: number; chatId: number }
   | { kind: "private_text"; userId: number; chatId: number; text: string; messageId: number }
   | { kind: "private_other"; userId: number; chatId: number }
-  | { kind: "admin_command"; userId: number; chatId: number; command: "admin" | "zuia" | "rudisha"; label?: string }
+  | { kind: "admin_command"; userId: number; chatId: number; command: "admin" | "zuia" | "rudisha"; label: string | undefined }
   | { kind: "group_link"; chatId: number; code: string; title: string | null }
   | { kind: "ignored"; reason: string };
 
@@ -34,7 +34,7 @@ export function classifyUpdate(u: TgUpdate): Classified {
   }
   if (m.chat.type === "group" || m.chat.type === "supergroup") {
     const g = /^\/unganisha(@\w+)?\s+([A-Z0-9]{6,12})$/.exec(text);
-    if (g) return { kind: "group_link", chatId: m.chat.id, code: g[2], title: m.chat.title ?? null };
+    if (g?.[2]) return { kind: "group_link", chatId: m.chat.id, code: g[2], title: m.chat.title ?? null };
     return { kind: "ignored", reason: "group_message" };
   }
   return { kind: "ignored", reason: "unsupported_chat" };

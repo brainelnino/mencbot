@@ -1,9 +1,10 @@
+import { adminHead } from "@/lib/route-head";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Loading, ErrorState, Empty, PageHeader, Pill } from "@/components/admin/States";
 
-export const Route = createFileRoute("/admin/wanachama")({ component: Members });
+export const Route = createFileRoute("/admin/wanachama")({ head: () => adminHead("Wanachama"), component: Members });
 
 function Members() {
   // Never selects telegram_user_id — private identifiers stay out of the UI.
