@@ -1,8 +1,9 @@
+import { adminHead } from "@/lib/route-head";
 import { createFileRoute } from "@tanstack/react-router";
 import { Brain } from "lucide-react";
 import { PageHeader, Pill } from "@/components/admin/States";
 
-export const Route = createFileRoute("/admin/brain")({ component: BrainPage });
+export const Route = createFileRoute("/admin/brain")({ head: () => adminHead("EL-NINO Brain"), component: BrainPage });
 
 const PLANNED = [
   "Kutambua mada zinazojirudia",

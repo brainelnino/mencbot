@@ -49,6 +49,7 @@ export const registerWebhook = createServerFn({ method: "POST" })
     const me = await tg<{ username: string }>("getMe");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: cfg } = await supabaseAdmin.from("telegram_config").select("id").limit(1).single();
+    if (!cfg) throw new Error("Telegram haijasanidiwa");
     await supabaseAdmin.from("telegram_config").update({ webhook_registered: true, webhook_url: url, bot_username: me.username }).eq("id", cfg.id);
     await context.supabase.rpc("write_audit", { _action: "telegram.webhook_registered", _target_type: "telegram", _target_id: "webhook", _details: { url } });
     return { url };
@@ -63,6 +64,7 @@ export const createGroupLinkCode = createServerFn({ method: "POST" })
     const code = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: cfg } = await supabaseAdmin.from("telegram_config").select("id").limit(1).single();
+    if (!cfg) throw new Error("Telegram haijasanidiwa");
     await supabaseAdmin.from("telegram_config").update({ group_link_code: code, group_link_expires_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", cfg.id);
     await context.supabase.rpc("write_audit", { _action: "telegram.group_link_code_created", _target_type: "telegram", _target_id: "group", _details: {} });
     return { code };

@@ -1,3 +1,4 @@
+import { adminHead } from "@/lib/route-head";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -8,7 +9,7 @@ import { TelegramPanel } from "@/components/admin/TelegramPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-export const Route = createFileRoute("/admin/mipangilio")({ component: SettingsPage });
+export const Route = createFileRoute("/admin/mipangilio")({ head: () => adminHead("Mipangilio"), component: SettingsPage });
 
 function SettingsPage() {
   const gens = useQuery({

@@ -1,4 +1,5 @@
-- [ ] Replace waiting-for-review replies with immediate private member broadcast and durable delivery tracking.
-- [ ] Enable Google sign-in for the owner; restrict web administration to the owner in database permissions.
-- [ ] Let the owner appoint Telegram assistants by existing public ID into slots 1–9.
-- [ ] Test delivery, permissions, sign-in UI, and live Telegram configuration.
+- [x] Replace waiting-for-review replies with immediate private member broadcast and durable delivery tracking; live sends recorded.
+- [x] Enable Google sign-in for the owner; restrict web administration to the owner in database permissions.
+- [x] Let the owner appoint Telegram assistants by existing public ID into slots 1–9.
+- [x] Test delivery, sign-in UI, and live Telegram configuration.
+- [ ] Verify owner appointment end-to-end: blocked because no web account or owner has been registered yet.

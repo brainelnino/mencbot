@@ -1,3 +1,4 @@
+import { adminHead } from "@/lib/route-head";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
-export const Route = createFileRoute("/admin/udhibiti")({ component: Moderation });
+export const Route = createFileRoute("/admin/udhibiti")({ head: () => adminHead("Udhibiti"), component: Moderation });
 
 function Moderation() {
   return (

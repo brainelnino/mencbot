@@ -1,3 +1,4 @@
+import { adminHead } from "@/lib/route-head";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -6,7 +7,7 @@ import { Loading, ErrorState, Empty, PageHeader, Pill } from "@/components/admin
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-export const Route = createFileRoute("/admin/jamii")({ component: Community });
+export const Route = createFileRoute("/admin/jamii")({ head: () => adminHead("Jamii"), component: Community });
 
 type Status = "all" | "pending" | "approved" | "rejected" | "flagged";
 

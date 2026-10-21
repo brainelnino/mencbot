@@ -1,9 +1,10 @@
+import { adminHead } from "@/lib/route-head";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Loading, ErrorState, Empty, PageHeader, Pill } from "@/components/admin/States";
 
-export const Route = createFileRoute("/admin/")({ component: Overview });
+export const Route = createFileRoute("/admin/")({ head: () => adminHead("Muhtasari"), component: Overview });
 
 function Overview() {
   const stats = useQuery({
