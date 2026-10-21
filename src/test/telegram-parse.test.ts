@@ -4,6 +4,10 @@ import { classifyUpdate, deriveWebhookSecret, safeEqual, publicWebhookUrl } from
 const priv = (text: string) => ({ update_id: 1, message: { message_id: 5, from: { id: 42 }, chat: { id: 42, type: "private" }, text } });
 
 describe("telegram parsing", () => {
+  it("recognises assistant commands by public ID without broadcasting them", () => {
+    expect(classifyUpdate(priv("/zuia 11"))).toMatchObject({ kind: "admin_command", command: "zuia", label: "11", userId: 42 });
+    expect(classifyUpdate(priv("/rudisha C"))).toMatchObject({ kind: "admin_command", command: "rudisha", label: "C" });
+  });
   it("recognises /start in a private chat", () => expect(classifyUpdate(priv("/start")).kind).toBe("start"));
   it("treats other private text as a message for review", () => expect(classifyUpdate(priv("Habari")).kind).toBe("private_text"));
   it("ignores ordinary group messages", () =>
