@@ -22,7 +22,7 @@ describe("direct private broadcast", () => {
   it("sends accepted text to every claimed private recipient without approval or a group", async () => {
     await publishMessage("message");
     expect(state.sends).toEqual([{ chat_id: 101, text: "11\nHabari" }, { chat_id: 202, text: "11\nHabari" }]);
-    expect(state.saved.filter((p) => p.status === "sent")).toHaveLength(2);
+    expect(state.saved.filter((p) => p['status'] === "sent")).toHaveLength(2);
   });
   it("does not resend deliveries that have already been completed", async () => {
     await publishMessage("message"); await publishMessage("message");
@@ -34,7 +34,7 @@ describe("direct private broadcast", () => {
       return body.chat_id === 101 ? new Response(JSON.stringify({ ok: false, description: "blocked" }), { status: 403 }) : new Response(JSON.stringify({ ok: true, result: { message_id: 10 } }));
     }));
     await publishMessage("message");
-    expect(state.saved.some((p) => p.status === "unreachable")).toBe(true);
-    expect(state.saved.some((p) => p.status === "sent")).toBe(true);
+    expect(state.saved.some((p) => p['status'] === "unreachable")).toBe(true);
+    expect(state.saved.some((p) => p['status'] === "sent")).toBe(true);
   });
 });
