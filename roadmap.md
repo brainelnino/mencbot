@@ -3,3 +3,6 @@
 - [x] Let the owner appoint Telegram assistants by existing public ID into slots 1–9.
 - [x] Test delivery, sign-in UI, and live Telegram configuration.
 - [ ] Verify owner appointment end-to-end: blocked because no web account or owner has been registered yet.
+- [ ] Exclude the sender from private message delivery.
+- [ ] Link Telegram replies across recipient chats with safe original-message context.
+- [ ] Quote-format public sender identities and verify all three message changes.
