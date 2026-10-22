@@ -9,6 +9,7 @@ const updateSchema = z.object({
     from: z.object({ id: z.number().int(), is_bot: z.boolean().optional() }).passthrough().optional(),
     chat: z.object({ id: z.number().int(), type: z.string(), title: z.string().optional() }).passthrough(),
     text: z.string().optional(), photo: z.array(z.unknown()).optional(),
+    reply_to_message: z.object({ message_id: z.number().int() }).passthrough().optional(),
   }).passthrough().optional(),
 }).passthrough();
 

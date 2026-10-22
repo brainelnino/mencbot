@@ -4,6 +4,11 @@ import { classifyUpdate, deriveWebhookSecret, safeEqual, publicWebhookUrl } from
 const priv = (text: string) => ({ update_id: 1, message: { message_id: 5, from: { id: 42 }, chat: { id: 42, type: "private" }, text } });
 
 describe("telegram parsing", () => {
+  it("retains the replied-to Telegram message ID for scoped reply resolution", () => {
+    const update = priv("Jibu");
+    expect(classifyUpdate({ ...update, message: { ...update.message, reply_to_message: { message_id: 88 } } })).toMatchObject({ kind: "private_text", replyMessageId: 88, messageId: 5 });
+    expect(classifyUpdate(priv("Habari"))).toMatchObject({ replyMessageId: null });
+  });
   it("recognises assistant commands by public ID without broadcasting them", () => {
     expect(classifyUpdate(priv("/zuia 11"))).toMatchObject({ kind: "admin_command", command: "zuia", label: "11", userId: 42 });
     expect(classifyUpdate(priv("/rudisha C"))).toMatchObject({ kind: "admin_command", command: "rudisha", label: "C" });
