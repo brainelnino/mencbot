@@ -1,6 +1,7 @@
 // Server-only Telegram service. Never import from browser code.
 import { classifyUpdate, type TgUpdate } from "./telegram-parse";
 import { t } from "./i18n";
+import { telegramMessagePayload } from "./telegram-format";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/telegram";
 
@@ -96,8 +97,15 @@ export async function handleUpdate(update: TgUpdate) {
           break;
         }
         if (mem.status !== "active") { status = "ignored"; break; }
+        let replyToId: string | null = null;
+        if (c.replyMessageId !== null) {
+          const { data: parent, error: replyError } = await db.rpc("resolve_telegram_reply", { _member_id: mem.id, _telegram_message_id: c.replyMessageId });
+          if (replyError) throw replyError;
+          replyToId = parent;
+        }
         const { error } = await db.from("messages").upsert({
           member_id: mem.id, sender_label: label, kind: "text", body: c.text,
+          reply_to_id: replyToId, telegram_chat_message_ref: { message_id: c.messageId },
           source_update_id: update.update_id, moderation_status: "pending",
           publication_status: "unpublished", processing_status: "awaiting_moderation",
         }, { onConflict: "source_update_id", ignoreDuplicates: true });
@@ -156,14 +164,14 @@ export async function publishMessage(messageId: string) {
   const { error } = await db.rpc("enqueue_private_message", { _message_id: messageId });
   if (error) throw error;
   for (let batch = 0; batch < 5; batch++) {
-    const { data: rows, error: claimError } = await db.rpc("claim_private_deliveries", { _message_id: messageId });
+    const { data: rows, error: claimError } = await db.rpc("claim_private_deliveries_v2", { _message_id: messageId });
     if (claimError) throw claimError;
     if (!rows?.length) break;
     let temporaryFailure = false;
     await Promise.all(rows.map(async (row) => {
       let patch: { status: string; sent_at?: string; telegram_message_id?: number; last_error: string | null };
       try {
-        const sent = await tg<{ message_id: number }>("sendMessage", { chat_id: row.chat_id, text: `${row.sender_label}\n${row.body ?? ""}` });
+        const sent = await tg<{ message_id: number }>("sendMessage", telegramMessagePayload(row));
         patch = { status: "sent", sent_at: new Date().toISOString(), telegram_message_id: sent.message_id, last_error: null };
       } catch (e) {
         const permanent = e instanceof TelegramError && (e.status === 403 || e.status === 400);
@@ -175,7 +183,11 @@ export async function publishMessage(messageId: string) {
     }));
     if (temporaryFailure) throw new TelegramError("Baadhi ya ujumbe utajaribiwa tena", 503, true);
   }
-  const { count, error: countError } = await db.from("telegram_deliveries").select("id", { count: "exact", head: true }).eq("message_id", messageId).in("status", ["pending", "failed", "sending"]);
+  const { data: source, error: sourceError } = await db.from("messages").select("member_id").eq("id", messageId).single();
+  if (sourceError) throw sourceError;
+  let pendingQuery = db.from("telegram_deliveries").select("id", { count: "exact", head: true }).eq("message_id", messageId);
+  if (source.member_id) pendingQuery = pendingQuery.neq("member_id", source.member_id);
+  const { count, error: countError } = await pendingQuery.in("status", ["pending", "failed", "sending"]);
   if (countError) throw countError;
   if (count) throw new TelegramError("Usambazaji unaendelea", 503, true);
   const { error: finishError } = await db.from("messages").update({ processing_status: "published", publication_error: null }).eq("id", messageId);

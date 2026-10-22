@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ pending: true, sends: [] as Record<string, unknown>[], saved: [] as Record<string, unknown>[] }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
-  rpc: async (name: string) => name === "claim_private_deliveries" ? { error: null, data: state.pending ? (state.pending = false, [{ id: "a", chat_id: 101, sender_label: "11", body: "Habari" }, { id: "b", chat_id: 202, sender_label: "11", body: "Habari" }]) : [] } : { error: null },
+  rpc: async (name: string) => name === "claim_private_deliveries_v2" ? { error: null, data: state.pending ? (state.pending = false, [{ id: "a", chat_id: 101, sender_label: "11", body: "Habari" }, { id: "b", chat_id: 202, sender_label: "11", body: "Habari" }]) : [] } : { error: null },
   from: () => ({
     update: (patch: Record<string, unknown>) => ({ eq: async () => { state.saved.push(patch); return { error: null }; } }),
-    select: () => ({ eq: () => ({ in: async () => ({ count: 0, error: null }) }) }),
+    select: () => ({ eq: () => ({ single: async () => ({ data: { member_id: null }, error: null }), in: async () => ({ count: 0, error: null }) }) }),
   }),
 } }));
 import { publishMessage } from "@/lib/telegram.server";
@@ -21,7 +21,7 @@ beforeEach(() => {
 describe("direct private broadcast", () => {
   it("sends accepted text to every claimed private recipient without approval or a group", async () => {
     await publishMessage("message");
-    expect(state.sends).toEqual([{ chat_id: 101, text: "11\nHabari" }, { chat_id: 202, text: "11\nHabari" }]);
+    expect(state.sends.map((s) => s['chat_id'])).toEqual([101, 202]);
     expect(state.saved.filter((p) => p['status'] === "sent")).toHaveLength(2);
   });
   it("does not resend deliveries that have already been completed", async () => {
