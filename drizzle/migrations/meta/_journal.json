@@ -22,6 +22,13 @@
       "when": 1792529893825,
       "tag": "0002_private_delivery_and_telegram_assistants",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792699511120,
+      "tag": "0003_telegram_sender_exclusion_and_replies",
+      "breakpoints": true
     }
   ]
 }

@@ -848,6 +848,18 @@ export type Database = {
           sender_label: string
         }[]
       }
+      claim_private_deliveries_v2: {
+        Args: { _message_id: string }
+        Returns: {
+          body: string
+          chat_id: number
+          id: string
+          reply_body: string
+          reply_label: string
+          reply_message_id: number
+          sender_label: string
+        }[]
+      }
       current_admin_id: { Args: never; Returns: string }
       enqueue_private_message: {
         Args: { _message_id: string }
@@ -883,6 +895,10 @@ export type Database = {
           label: string
           member_id: string
         }[]
+      }
+      resolve_telegram_reply: {
+        Args: { _member_id: string; _telegram_message_id: number }
+        Returns: string
       }
       set_telegram_admin_active: {
         Args: { _active: boolean; _id: string }

@@ -7,13 +7,14 @@ export type TgUpdate = {
     chat: { id: number; type: string; title?: string };
     text?: string;
     photo?: unknown[];
+    reply_to_message?: { message_id: number };
   };
   [k: string]: unknown;
 };
 
 export type Classified =
   | { kind: "start"; userId: number; chatId: number }
-  | { kind: "private_text"; userId: number; chatId: number; text: string; messageId: number }
+  | { kind: "private_text"; userId: number; chatId: number; text: string; messageId: number; replyMessageId: number | null }
   | { kind: "private_other"; userId: number; chatId: number }
   | { kind: "admin_command"; userId: number; chatId: number; command: "admin" | "zuia" | "rudisha"; label: string | undefined }
   | { kind: "group_link"; chatId: number; code: string; title: string | null }
@@ -29,7 +30,7 @@ export function classifyUpdate(u: TgUpdate): Classified {
     if (/^\/start(@\w+)?(\s|$)/.test(text)) return { kind: "start", userId: m.from.id, chatId: m.chat.id };
     const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
-    if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), messageId: m.message_id };
+    if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     return { kind: "private_other", userId: m.from.id, chatId: m.chat.id };
   }
   if (m.chat.type === "group" || m.chat.type === "supergroup") {
