@@ -30,4 +30,12 @@ describe("telegram parsing", () => {
   });
   it("maps the editor preview host to the public dev host", () =>
     expect(publicWebhookUrl("https://id-preview--abc-123.lovable.app")).toBe("https://project--abc-123-dev.lovable.app/api/public/telegram/webhook"));
+  it("classifies a private reaction with its emoji", () =>
+    expect(classifyUpdate({ update_id: 5, message_reaction: { message_id: 77, chat: { id: 42, type: "private" }, user: { id: 42 }, new_reaction: [{ type: "emoji", emoji: "❤️" }] } }))
+      .toMatchObject({ kind: "reaction", userId: 42, messageId: 77, emoji: "❤️" }));
+  it("treats an empty new_reaction as a removal", () =>
+    expect(classifyUpdate({ update_id: 6, message_reaction: { message_id: 77, chat: { id: 42, type: "private" }, user: { id: 42 }, new_reaction: [] } }))
+      .toMatchObject({ kind: "reaction", emoji: null }));
+  it("ignores reactions outside private chats", () =>
+    expect(classifyUpdate({ update_id: 7, message_reaction: { message_id: 1, chat: { id: -100, type: "supergroup" }, user: { id: 1 }, new_reaction: [{ type: "emoji", emoji: "👍" }] } }).kind).toBe("ignored"));
 });
