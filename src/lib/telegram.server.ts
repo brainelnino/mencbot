@@ -1,5 +1,5 @@
 // Server-only Telegram service. Never import from browser code.
-import { classifyUpdate, type TgUpdate } from "./telegram-parse";
+import { classifyUpdate, hasBlockedContent, type TgUpdate } from "./telegram-parse";
 import { t } from "./i18n";
 import { telegramMessagePayload } from "./telegram-format";
 
