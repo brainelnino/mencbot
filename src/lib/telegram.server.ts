@@ -210,3 +210,25 @@ export async function publishMessage(messageId: string) {
   const { error: finishError } = await db.from("messages").update({ processing_status: "published", publication_error: null }).eq("id", messageId);
   if (finishError) throw finishError;
 }
+
+/** Sends one compact reaction-count summary to every active member. Failures never fail the update. */
+async function broadcastReactionSummary(messageId: string) {
+  const db = await admin();
+  const { data: summary, error: summaryError } = await db.rpc("get_reaction_summary", { _message_id: messageId });
+  if (summaryError) throw summaryError;
+  if (!summary?.length) return;
+  const { data: msg, error: msgError } = await db.from("messages").select("sender_label").eq("id", messageId).single();
+  if (msgError) throw msgError;
+  const { data: members, error: membersError } = await db.from("members").select("telegram_user_id").eq("status", "active").not("telegram_user_id", "is", null);
+  if (membersError) throw membersError;
+  if (!members?.length) return;
+  const counts = summary.map((s) => `${s.emoji}×${s.total}`).join("  ");
+  const text = `<blockquote>${escapeHtml(counts)}</blockquote>\n↩ ${escapeHtml(t.telegram.reactionTo(msg.sender_label))}`;
+  await Promise.all(members.map(async (m) => {
+    try {
+      await tg("sendMessage", { chat_id: m.telegram_user_id, parse_mode: "HTML", text });
+    } catch (e) {
+      log("warn", "reaction_summary_failed", { error: e instanceof Error ? e.message : "error" });
+    }
+  }));
+}

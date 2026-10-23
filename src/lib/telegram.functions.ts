@@ -45,7 +45,7 @@ export const registerWebhook = createServerFn({ method: "POST" })
     const { deriveWebhookSecret, publicWebhookUrl } = await import("./telegram-parse");
     const url = publicWebhookUrl(new URL(getRequest().url).origin);
     const secret = await deriveWebhookSecret(process.env["TELEGRAM_API_KEY"]!);
-    await tg("setWebhook", { url, secret_token: secret, allowed_updates: ["message"] });
+    await tg("setWebhook", { url, secret_token: secret, allowed_updates: ["message", "message_reaction"] });
     const me = await tg<{ username: string }>("getMe");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: cfg } = await supabaseAdmin.from("telegram_config").select("id").limit(1).single();
