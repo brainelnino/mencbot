@@ -97,6 +97,10 @@ export async function handleUpdate(update: TgUpdate) {
           break;
         }
         if (mem.status !== "active") { status = "ignored"; break; }
+        if (hasBlockedContent(c.text)) {
+          await tg("sendMessage", { chat_id: c.chatId, text: "⚠️ Ujumbe haujatumwa: link na namba za simu haziruhusiwi." });
+          status = "ignored"; break;
+        }
         let replyToId: string | null = null;
         if (c.replyMessageId !== null) {
           const { data: parent, error: replyError } = await db.rpc("resolve_telegram_reply", { _member_id: mem.id, _telegram_message_id: c.replyMessageId });
