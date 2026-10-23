@@ -4,7 +4,7 @@ import { ShieldCheck, MessagesSquare, Brain, Send } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 import { TzFlag } from "@/components/brand/TzFlag";
-import { MessageList, type PublicMessage } from "@/components/chat/MessageList";
+import { MessageList, type PublicMessage, type ReactionCount } from "@/components/chat/MessageList";
 import { Loading, ErrorState } from "@/components/admin/States";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
@@ -32,6 +32,19 @@ function Index() {
       const { data, error } = await supabase.rpc("get_public_messages", { _limit: 50 });
       if (error) throw error;
       return (data ?? []).slice().reverse() as PublicMessage[];
+    },
+    refetchInterval: 20000,
+  });
+  const reactions = useQuery({
+    queryKey: ["public-reactions"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_public_reactions");
+      if (error) throw error;
+      const map: Record<string, ReactionCount[]> = {};
+      for (const row of data ?? []) {
+        (map[row.message_id] ??= []).push({ emoji: row.emoji, total: Number(row.total) });
+      }
+      return map;
     },
     refetchInterval: 20000,
   });
@@ -96,7 +109,7 @@ function Index() {
                 </p>
               </div>
             ) : (
-              <MessageList messages={feed.data ?? []} />
+              <MessageList messages={feed.data ?? []} reactions={reactions.data} />
             )}
           </div>
         </section>
