@@ -9,6 +9,12 @@ export type TgUpdate = {
     photo?: unknown[];
     reply_to_message?: { message_id: number };
   };
+  message_reaction?: {
+    message_id: number;
+    chat: { id: number; type: string };
+    user?: { id: number };
+    new_reaction?: Array<{ type: string; emoji?: string }>;
+  };
   [k: string]: unknown;
 };
 
@@ -18,9 +24,16 @@ export type Classified =
   | { kind: "private_other"; userId: number; chatId: number }
   | { kind: "admin_command"; userId: number; chatId: number; command: "admin" | "zuia" | "rudisha"; label: string | undefined }
   | { kind: "group_link"; chatId: number; code: string; title: string | null }
+  | { kind: "reaction"; userId: number; chatId: number; messageId: number; emoji: string | null }
   | { kind: "ignored"; reason: string };
 
 export function classifyUpdate(u: TgUpdate): Classified {
+  const r = u.message_reaction;
+  if (r) {
+    if (r.chat?.type !== "private" || !r.user) return { kind: "ignored", reason: "reaction_scope" };
+    const emoji = r.new_reaction?.find((x) => x.type === "emoji")?.emoji ?? null;
+    return { kind: "reaction", userId: r.user.id, chatId: r.chat.id, messageId: r.message_id, emoji };
+  }
   const m = u.message;
   if (!m || !m.chat) return { kind: "ignored", reason: "no_message" };
   if (m.from?.is_bot) return { kind: "ignored", reason: "from_bot" };
@@ -74,4 +87,17 @@ export function hasBlockedContent(text: string): boolean {
     if (m.replace(/\D/g, "").length >= 7) return true;
   }
   return false;
+}
+
+/** Returns the first blocked term found in text (whole-word, case-insensitive), or null. */
+export function findBlockedTerm(text: string, terms: string[]): string | null {
+  const lower = text.toLowerCase();
+  for (const raw of terms) {
+    const term = raw.trim().toLowerCase();
+    if (!term) continue;
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu");
+    if (re.test(lower)) return raw;
+  }
+  return null;
 }

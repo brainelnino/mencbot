@@ -1,5 +1,5 @@
 // Telegram HTML is escaped independently from the private delivery references.
-function escapeHtml(text: string) {
+export function escapeHtml(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 

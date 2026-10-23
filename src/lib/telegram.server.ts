@@ -1,7 +1,7 @@
 // Server-only Telegram service. Never import from browser code.
-import { classifyUpdate, hasBlockedContent, type TgUpdate } from "./telegram-parse";
+import { classifyUpdate, findBlockedTerm, hasBlockedContent, type TgUpdate } from "./telegram-parse";
 import { t } from "./i18n";
-import { telegramMessagePayload } from "./telegram-format";
+import { escapeHtml, telegramMessagePayload } from "./telegram-format";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/telegram";
 
@@ -101,6 +101,12 @@ export async function handleUpdate(update: TgUpdate) {
           await tg("sendMessage", { chat_id: c.chatId, text: "⚠️ Ujumbe haujatumwa: link na namba za simu haziruhusiwi." });
           status = "ignored"; break;
         }
+        const { data: termRows, error: termError } = await db.from("blocked_terms").select("term");
+        if (termError) throw termError;
+        if (findBlockedTerm(c.text, (termRows ?? []).map((r) => r.term))) {
+          await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.blockedTerm });
+          status = "ignored"; break;
+        }
         let replyToId: string | null = null;
         if (c.replyMessageId !== null) {
           const { data: parent, error: replyError } = await db.rpc("resolve_telegram_reply", { _member_id: mem.id, _telegram_message_id: c.replyMessageId });
@@ -128,6 +134,13 @@ export async function handleUpdate(update: TgUpdate) {
         if (c.command === "admin" || !c.label) { await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.adminMenu(slot) }); break; }
         const { error } = await db.rpc("telegram_admin_set_member_status", { _tg_user_id: c.userId, _label: c.label, _status: c.command === "zuia" ? "banned" : "active" });
         await tg("sendMessage", { chat_id: c.chatId, text: error?.message ?? t.telegram.adminDone });
+        break;
+      }
+      case "reaction": {
+        const { data: reactionMessageId, error } = await db.rpc("record_telegram_reaction", { _tg_user_id: c.userId, _telegram_message_id: c.messageId, _emoji: c.emoji });
+        if (error) throw error;
+        if (!reactionMessageId) { status = "ignored"; break; }
+        await broadcastReactionSummary(reactionMessageId);
         break;
       }
       case "private_other":
@@ -196,4 +209,26 @@ export async function publishMessage(messageId: string) {
   if (count) throw new TelegramError("Usambazaji unaendelea", 503, true);
   const { error: finishError } = await db.from("messages").update({ processing_status: "published", publication_error: null }).eq("id", messageId);
   if (finishError) throw finishError;
+}
+
+/** Sends one compact reaction-count summary to every active member. Failures never fail the update. */
+async function broadcastReactionSummary(messageId: string) {
+  const db = await admin();
+  const { data: summary, error: summaryError } = await db.rpc("get_reaction_summary", { _message_id: messageId });
+  if (summaryError) throw summaryError;
+  if (!summary?.length) return;
+  const { data: msg, error: msgError } = await db.from("messages").select("sender_label").eq("id", messageId).single();
+  if (msgError) throw msgError;
+  const { data: members, error: membersError } = await db.from("members").select("telegram_user_id").eq("status", "active").not("telegram_user_id", "is", null);
+  if (membersError) throw membersError;
+  if (!members?.length) return;
+  const counts = summary.map((s) => `${s.emoji}×${s.total}`).join("  ");
+  const text = `<blockquote>${escapeHtml(counts)}</blockquote>\n↩ ${escapeHtml(t.telegram.reactionTo(msg.sender_label))}`;
+  await Promise.all(members.map(async (m) => {
+    try {
+      await tg("sendMessage", { chat_id: m.telegram_user_id, parse_mode: "HTML", text });
+    } catch (e) {
+      log("warn", "reaction_summary_failed", { error: e instanceof Error ? e.message : "error" });
+    }
+  }));
 }

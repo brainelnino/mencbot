@@ -21,6 +21,8 @@ export const sw = {
     startFirst: "Tuma /start kwanza.", textOnly: "Maandishi pekee kwa sasa.", exhausted: "Nafasi za usajili zimejaa kwa sasa.",
     adminMenu: (slot: number) => `Msimamizi ${slot}\n/zuia ID\n/rudisha ID`,
     adminDone: "Imekamilika.", noPermission: "Huna ruhusa.",
+    blockedTerm: "⚠️ Ujumbe haujatumwa: haturuhusu maneno yasiofaa au matusi.",
+    reactionTo: (label: string) => `kwa ujumbe wa ${label}`,
   },
   assistants: { title: "Wasimamizi wa Telegram", label: "ID ya mwanachama", slot: "Nafasi", appoint: "Teua", success: "Msimamizi ameteuliwa", active: "Hai", inactive: "Imezimwa", enable: "Washa", disable: "Zima", empty: "Hakuna wasimamizi wa Telegram bado." },
   publicPrivacy: "Utambulisho wako halisi haufichuliwi.",
