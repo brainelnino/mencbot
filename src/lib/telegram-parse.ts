@@ -63,3 +63,15 @@ export function publicWebhookUrl(origin: string) {
   const host = m ? `project--${m[1]}-dev.${m[2]}` : u.host;
   return `https://${host}/api/public/telegram/webhook`;
 }
+
+/** True when text contains a link or a phone number (any country format). */
+export function hasBlockedContent(text: string): boolean {
+  const link = /(https?:\/\/|www\.|t\.me\/|wa\.me\/|\b[a-z0-9-]+\.(com|net|org|tz|co|io|me|info|biz|app|xyz|link|ly|gl|site|online|africa|ke|ug)\b)/i;
+  if (link.test(text)) return true;
+  // 7+ digits allowing spaces, dashes, dots, brackets, optional leading +
+  const phone = /(\+?\d[\d\s().-]{5,}\d)/g;
+  for (const m of text.match(phone) ?? []) {
+    if (m.replace(/\D/g, "").length >= 7) return true;
+  }
+  return false;
+}

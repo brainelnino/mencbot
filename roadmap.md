@@ -6,3 +6,5 @@
 - [x] Exclude the sender from private message delivery; verified on a live message.
 - [x] Link Telegram replies across recipient chats with safe original-message context; transactional database tests and automated tests passed.
 - [x] Quote-format public sender identities; live delivery succeeded and automated tests passed.
+- [x] Owner web access by PIN only (no account signup); wrong PIN rejected.
+- [x] Block Telegram messages containing links or phone numbers (any country); tests pass.
