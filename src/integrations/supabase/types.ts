@@ -403,6 +403,48 @@ export type Database = {
         }
         Relationships: []
       }
+      message_reactions: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: string
+          member_id: string
+          message_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          emoji: string
+          id?: string
+          member_id: string
+          message_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          member_id?: string
+          message_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           body: string | null
@@ -877,6 +919,21 @@ export type Database = {
           sender_label: string
         }[]
       }
+      get_public_reactions: {
+        Args: never
+        Returns: {
+          emoji: string
+          message_id: string
+          total: number
+        }[]
+      }
+      get_reaction_summary: {
+        Args: { _message_id: string }
+        Returns: {
+          emoji: string
+          total: number
+        }[]
+      }
       get_telegram_admin_slot: {
         Args: { _tg_user_id: number }
         Returns: number
@@ -888,6 +945,14 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
       owner_exists: { Args: never; Returns: boolean }
+      record_telegram_reaction: {
+        Args: {
+          _emoji: string
+          _telegram_message_id: number
+          _tg_user_id: number
+        }
+        Returns: string
+      }
       register_telegram_member: {
         Args: { _tg_user_id: number }
         Returns: {
