@@ -8,3 +8,5 @@
 - [x] Quote-format public sender identities; live delivery succeeded and automated tests passed.
 - [x] Owner web access by PIN only (no account signup); wrong PIN rejected.
 - [x] Block Telegram messages containing links or phone numbers (any country); tests pass.
+- [x] Block Telegram messages containing owner-managed blocked terms (whole-word, case-insensitive); sender warned privately, tests pass.
+- [x] Record Telegram reactions per member and broadcast compact count summaries to all members; counts shown on the public web feed; webhook re-registered with message_reaction.
