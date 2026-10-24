@@ -1,7 +1,7 @@
 // Server-only Telegram service. Never import from browser code.
 import { classifyUpdate, findBlockedTerm, hasBlockedContent, type TgUpdate } from "./telegram-parse";
 import { t } from "./i18n";
-import { escapeHtml, telegramMessagePayload } from "./telegram-format";
+import { telegramMessagePayload, telegramStoredMessageText, withReactionFooter } from "./telegram-format";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/telegram";
 
@@ -140,7 +140,7 @@ export async function handleUpdate(update: TgUpdate) {
         const { data: reactionMessageId, error } = await db.rpc("record_telegram_reaction", { _tg_user_id: c.userId, _telegram_message_id: c.messageId, _emoji: c.emoji ?? "" });
         if (error) throw error;
         if (!reactionMessageId) { status = "ignored"; break; }
-        await broadcastReactionSummary(reactionMessageId);
+        await syncReactionEdits(reactionMessageId);
         break;
       }
       case "private_other":
@@ -211,24 +211,29 @@ export async function publishMessage(messageId: string) {
   if (finishError) throw finishError;
 }
 
-/** Sends one compact reaction-count summary to every active member. Failures never fail the update. */
-async function broadcastReactionSummary(messageId: string) {
+/** Edits every delivered copy so anonymous aggregate reaction counts appear on the message itself. Failures never fail the update. */
+async function syncReactionEdits(messageId: string) {
   const db = await admin();
   const { data: summary, error: summaryError } = await db.rpc("get_reaction_summary", { _message_id: messageId });
   if (summaryError) throw summaryError;
-  if (!summary?.length) return;
-  const { data: msg, error: msgError } = await db.from("messages").select("sender_label").eq("id", messageId).single();
+  const { data: msg, error: msgError } = await db.from("messages").select("sender_label, body, reply_to_id").eq("id", messageId).single();
   if (msgError) throw msgError;
-  const { data: members, error: membersError } = await db.from("members").select("telegram_user_id").eq("status", "active").not("telegram_user_id", "is", null);
-  if (membersError) throw membersError;
-  if (!members?.length) return;
-  const counts = summary.map((s) => `${s.emoji}×${s.total}`).join("  ");
-  const text = `<blockquote>${escapeHtml(counts)}</blockquote>\n↩ ${escapeHtml(t.telegram.reactionTo(msg.sender_label))}`;
-  await Promise.all(members.map(async (m) => {
+  let reply: { reply_label: string; reply_body: string | null } | undefined;
+  if (msg.reply_to_id) {
+    const { data: parent } = await db.from("messages").select("sender_label, body").eq("id", msg.reply_to_id).maybeSingle();
+    if (parent) reply = { reply_label: parent.sender_label, reply_body: parent.body };
+  }
+  const text = withReactionFooter(telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, ...reply }), summary ?? []);
+  const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
+  if (delError) throw delError;
+  await Promise.all((deliveries ?? []).map(async (d) => {
+    const chatId = (d.members as { telegram_user_id: number } | null)?.telegram_user_id;
+    if (!chatId || !d.telegram_message_id) return;
     try {
-      await tg("sendMessage", { chat_id: m.telegram_user_id, parse_mode: "HTML", text });
+      await tg("editMessageText", { chat_id: chatId, message_id: d.telegram_message_id, parse_mode: "HTML", text });
     } catch (e) {
-      log("warn", "reaction_summary_failed", { error: e instanceof Error ? e.message : "error" });
+      // "message is not modified" or a deleted copy is expected; never fail the update.
+      log("warn", "reaction_edit_failed", { error: e instanceof Error ? e.message : "error" });
     }
   }));
 }
