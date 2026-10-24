@@ -20,6 +20,14 @@ function Admins() {
     if (error) throw error;
     return data ?? [];
   } });
+  const members = useQuery({ queryKey: ["active-member-labels"], queryFn: async () => {
+    const { data, error } = await supabase.from("members").select("id,public_identities(label)").eq("status", "active");
+    if (error) throw error;
+    return (data ?? [])
+      .map((m) => ({ id: m.id, label: (m.public_identities as { label: string } | null)?.label }))
+      .filter((m): m is { id: string; label: string } => !!m.label)
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  } });
   const appoint = useMutation({ mutationFn: async () => {
     const { error } = await supabase.rpc("appoint_telegram_admin", { _label: label, _slot: Number(slot) });
     if (error) throw error;
@@ -32,7 +40,12 @@ function Admins() {
   return <div>
     <PageHeader title={t.assistants.title} />
     <form onSubmit={submit} className="mb-6 flex flex-wrap items-end gap-3">
-      <div className="grid gap-2"><Label htmlFor="member-label">{t.assistants.label}</Label><Input id="member-label" required maxLength={12} value={label} onChange={(e) => setLabel(e.target.value)} /></div>
+      <div className="grid gap-2"><Label htmlFor="member-label">{t.assistants.label}</Label>
+        <select id="member-label" required value={label} onChange={(e) => setLabel(e.target.value)} className="flex h-9 min-w-32 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm">
+          <option value="" disabled>{t.assistants.choose}</option>
+          {(members.data ?? []).map((m) => <option key={m.id} value={m.label}>{m.label}</option>)}
+        </select>
+      </div>
       <div className="grid gap-2"><Label htmlFor="admin-slot">{t.assistants.slot}</Label><Input id="admin-slot" className="w-20" type="number" min={1} max={9} required value={slot} onChange={(e) => setSlot(e.target.value)} /></div>
       <Button type="submit" disabled={appoint.isPending}>{t.assistants.appoint}</Button>
     </form>
