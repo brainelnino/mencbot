@@ -9,7 +9,7 @@ export type PublicMessage = {
 export type ReactionCount = { emoji: string; total: number };
 
 // Body is rendered as plain text (React escapes it) — never as HTML.
-export function MessageList({ messages, reactions }: { messages: PublicMessage[]; reactions?: Record<string, ReactionCount[]> }) {
+export function MessageList({ messages, reactions }: { messages: PublicMessage[]; reactions?: Record<string, ReactionCount[]> | undefined }) {
   return (
     <ol className="flex flex-col gap-4">
       {messages.map((m) => {
