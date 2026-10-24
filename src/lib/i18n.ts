@@ -23,7 +23,7 @@ export const sw = {
     adminDone: "Imekamilika.", noPermission: "Huna ruhusa.",
     blockedTerm: "⚠️ Ujumbe haujatumwa: haturuhusu maneno yasiofaa au matusi.",
   },
-  assistants: { title: "Wasimamizi wa Telegram", label: "ID ya mwanachama", slot: "Nafasi", appoint: "Teua", success: "Msimamizi ameteuliwa", active: "Hai", inactive: "Imezimwa", enable: "Washa", disable: "Zima", empty: "Hakuna wasimamizi wa Telegram bado." },
+  assistants: { title: "Wasimamizi wa Telegram", label: "ID ya mwanachama", choose: "Chagua mwanachama…", slot: "Nafasi", appoint: "Teua", success: "Msimamizi ameteuliwa", active: "Hai", inactive: "Imezimwa", enable: "Washa", disable: "Zima", empty: "Hakuna wasimamizi wa Telegram bado." },
   publicPrivacy: "Utambulisho wako halisi haufichuliwi.",
   publicEmpty: "Bado hakuna ujumbe uliochapishwa.",
 } as const;
