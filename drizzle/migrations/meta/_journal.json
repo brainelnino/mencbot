@@ -36,6 +36,13 @@
       "when": 1792717207530,
       "tag": "0004_message_reactions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792841516234,
+      "tag": "0005_clearer_appoint_telegram_admin",
+      "breakpoints": true
     }
   ]
 }
