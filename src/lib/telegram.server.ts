@@ -137,7 +137,7 @@ export async function handleUpdate(update: TgUpdate) {
         break;
       }
       case "reaction": {
-        const { data: reactionMessageId, error } = await db.rpc("record_telegram_reaction", { _tg_user_id: c.userId, _telegram_message_id: c.messageId, _emoji: c.emoji });
+        const { data: reactionMessageId, error } = await db.rpc("record_telegram_reaction", { _tg_user_id: c.userId, _telegram_message_id: c.messageId, _emoji: c.emoji ?? "" });
         if (error) throw error;
         if (!reactionMessageId) { status = "ignored"; break; }
         await broadcastReactionSummary(reactionMessageId);
