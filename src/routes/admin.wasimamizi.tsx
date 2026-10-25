@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
 import { adminHead } from "@/lib/route-head";
+import { OfficesPanel } from "@/components/admin/OfficesPanel";
+import { SLOT_TITLES } from "@/lib/office-config";
 
 export const Route = createFileRoute("/admin/wasimamizi")({ head: () => adminHead("Wasimamizi wa Telegram"), component: Admins });
 function Admins() {
@@ -51,9 +53,10 @@ function Admins() {
     </form>
     {q.isLoading ? <Loading /> : q.error ? <ErrorState error={q.error} /> : !q.data?.length ? <Empty title={t.assistants.empty} /> :
       <ul className="grid gap-3 md:grid-cols-2">{q.data.map((a) => <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-        <span className="identity-chip">{a.admin_slot} <span className="text-xs text-muted-foreground">({a.members?.public_identities?.label ?? "—"})</span></span>
+        <span className="identity-chip">{a.admin_slot} {SLOT_TITLES[a.admin_slot]} <span className="text-xs text-muted-foreground">({a.members?.public_identities?.label ?? "—"})</span></span>
         <Pill tone={a.is_active ? "ok" : "bad"}>{a.is_active ? t.assistants.active : t.assistants.inactive}</Pill>
         <Button size="sm" variant="outline" disabled={toggle.isPending} onClick={() => toggle.mutate({ id: a.id, active: !a.is_active })}>{a.is_active ? t.assistants.disable : t.assistants.enable}</Button>
       </li>)}</ul>}
+    <OfficesPanel />
   </div>;
 }

@@ -20,6 +20,7 @@ import { Route as AdminUdhibitiRouteImport } from './routes/admin.udhibiti'
 import { Route as AdminWanachamaRouteImport } from './routes/admin.wanachama'
 import { Route as AdminWasimamiziRouteImport } from './routes/admin.wasimamizi'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
+import { Route as ApiPublicTelegramOfisiOfficeRouteImport } from './routes/api/public/telegram/ofisi.$office'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -77,6 +78,12 @@ const ApiPublicTelegramWebhookRoute =
     path: '/api/public/telegram/webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicTelegramOfisiOfficeRoute =
+  ApiPublicTelegramOfisiOfficeRouteImport.update({
+    id: '/api/public/telegram/ofisi/$office',
+    path: '/api/public/telegram/ofisi/$office',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByFullPath {
   '/admin/wasimamizi': typeof AdminWasimamiziRoute
   '/admin/': typeof AdminIndexRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
+  '/api/public/telegram/ofisi/$office': typeof ApiPublicTelegramOfisiOfficeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +110,7 @@ export interface FileRoutesByTo {
   '/admin/wasimamizi': typeof AdminWasimamiziRoute
   '/admin': typeof AdminIndexRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
+  '/api/public/telegram/ofisi/$office': typeof ApiPublicTelegramOfisiOfficeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +125,7 @@ export interface FileRoutesById {
   '/admin/wasimamizi': typeof AdminWasimamiziRoute
   '/admin/': typeof AdminIndexRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
+  '/api/public/telegram/ofisi/$office': typeof ApiPublicTelegramOfisiOfficeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +141,7 @@ export interface FileRouteTypes {
     | '/admin/wasimamizi'
     | '/admin/'
     | '/api/public/telegram/webhook'
+    | '/api/public/telegram/ofisi/$office'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -143,6 +154,7 @@ export interface FileRouteTypes {
     | '/admin/wasimamizi'
     | '/admin'
     | '/api/public/telegram/webhook'
+    | '/api/public/telegram/ofisi/$office'
   id:
     | '__root__'
     | '/'
@@ -156,6 +168,7 @@ export interface FileRouteTypes {
     | '/admin/wasimamizi'
     | '/admin/'
     | '/api/public/telegram/webhook'
+    | '/api/public/telegram/ofisi/$office'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -163,6 +176,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   IngiaRoute: typeof IngiaRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
+  ApiPublicTelegramOfisiOfficeRoute: typeof ApiPublicTelegramOfisiOfficeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -244,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTelegramWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/telegram/ofisi/$office': {
+      id: '/api/public/telegram/ofisi/$office'
+      path: '/api/public/telegram/ofisi/$office'
+      fullPath: '/api/public/telegram/ofisi/$office'
+      preLoaderRoute: typeof ApiPublicTelegramOfisiOfficeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -274,6 +295,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   IngiaRoute: IngiaRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
+  ApiPublicTelegramOfisiOfficeRoute: ApiPublicTelegramOfisiOfficeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
