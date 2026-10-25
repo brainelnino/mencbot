@@ -598,6 +598,57 @@ export type Database = {
         }
         Relationships: []
       }
+      office_bots: {
+        Row: {
+          bot_token: string | null
+          bot_username: string | null
+          is_active: boolean
+          last_error: string | null
+          last_update_at: string | null
+          office: string
+          updated_at: string
+          webhook_secret: string | null
+        }
+        Insert: {
+          bot_token?: string | null
+          bot_username?: string | null
+          is_active?: boolean
+          last_error?: string | null
+          last_update_at?: string | null
+          office: string
+          updated_at?: string
+          webhook_secret?: string | null
+        }
+        Update: {
+          bot_token?: string | null
+          bot_username?: string | null
+          is_active?: boolean
+          last_error?: string | null
+          last_update_at?: string | null
+          office?: string
+          updated_at?: string
+          webhook_secret?: string | null
+        }
+        Relationships: []
+      }
+      office_updates: {
+        Row: {
+          created_at: string
+          office: string
+          update_id: number
+        }
+        Insert: {
+          created_at?: string
+          office: string
+          update_id: number
+        }
+        Update: {
+          created_at?: string
+          office?: string
+          update_id?: number
+        }
+        Relationships: []
+      }
       public_identities: {
         Row: {
           created_at: string
@@ -944,7 +995,21 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
+      office_report: { Args: never; Returns: Json }
+      office_slots: { Args: { _office: string }; Returns: number[] }
       owner_exists: { Args: never; Returns: boolean }
+      raisi_appoint: {
+        Args: { _actor_tg: number; _label: string; _slot: number }
+        Returns: string
+      }
+      raisi_move: {
+        Args: { _actor_tg: number; _from: number; _to: number }
+        Returns: boolean
+      }
+      raisi_remove: {
+        Args: { _actor_tg: number; _slot: number }
+        Returns: boolean
+      }
       record_telegram_reaction: {
         Args: {
           _emoji: string

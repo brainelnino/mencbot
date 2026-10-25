@@ -11,3 +11,6 @@
 - [x] Block Telegram messages containing owner-managed blocked terms (whole-word, case-insensitive); sender warned privately, tests pass.
 - [x] Record Telegram reactions per member; anonymous counts edited onto the delivered message itself (no summary spam) and shown on the public web feed; webhook re-registered with message_reaction.
 - [x] Fix assistant appointment: owner now picks a member from a dropdown of active IDs instead of typing, and the database returns specific errors (unknown ID, already an assistant, slot taken).
+
+- [x] Leadership office bots: token management on web, Raisi office commands
+- [ ] Mbunge, Polisi, Mwenyekiti, Mjumbe/Mgambo office tools (next phases)
