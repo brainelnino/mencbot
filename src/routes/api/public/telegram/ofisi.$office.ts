@@ -8,7 +8,13 @@ const schema = z.object({
   message: z.object({
     chat: z.object({ id: z.number().int(), type: z.string() }).passthrough(),
     from: z.object({ id: z.number().int() }).passthrough().optional(),
+    message_id: z.number().int().positive().optional(),
     text: z.string().max(4096).optional(),
+    reply_to_message: z.object({ from: z.object({ id: z.number().int() }).passthrough().optional(), text: z.string().max(4096).optional() }).passthrough().optional(),
+  }).passthrough().optional(),
+  callback_query: z.object({
+    id: z.string().max(256), from: z.object({ id: z.number().int() }).passthrough(), data: z.string().max(64).optional(),
+    message: z.object({ message_id: z.number().int().positive(), chat: z.object({ id: z.number().int(), type: z.string() }).passthrough(), text: z.string().max(4096).optional() }).passthrough().optional(),
   }).passthrough().optional(),
 }).passthrough();
 
