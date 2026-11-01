@@ -31,7 +31,7 @@ beforeEach(() => {
 describe("Raisi guided workflow", () => {
   it("upgrades existing webhook and completes F appointment only after confirmation", async () => {
     await handleOfficeUpdate("raisi", token, { update_id: 1, message: message("/menu") });
-    expect(calls.find((x) => x.method === "setWebhook")?.body.allowed_updates).toContain("callback_query");
+    expect(calls.find((x) => x.method === "setWebhook")?.body["allowed_updates"]).toContain("callback_query");
     await handleOfficeUpdate("raisi", token, callback(2, "o:teua"));
     await handleOfficeUpdate("raisi", token, callback(3, "o:teua:3"));
     await handleOfficeUpdate("raisi", token, { update_id: 4, message: message("F", t.office.idPrompt(3)) });
@@ -45,13 +45,13 @@ describe("Raisi guided workflow", () => {
     mocks.slot = 0;
     await handleOfficeUpdate("raisi", token, callback(1, "o:confirm:ondoa:5"));
     expect(mocks.rpc.mock.calls.some(([name]) => name === "raisi_remove")).toBe(false);
-    expect(calls.find((x) => x.method === "answerCallbackQuery")?.body.show_alert).toBe(true);
+    expect(calls.find((x) => x.method === "answerCallbackQuery")?.body["show_alert"]).toBe(true);
   });
   it("shows speech preview without broadcasting it", async () => {
     await handleOfficeUpdate("raisi", token, callback(1, "o:hotuba"));
     await handleOfficeUpdate("raisi", token, { update_id: 2, message: message("Habari jamii", t.office.speechPrompt) });
     const card = calls.filter((x) => x.method === "sendMessage").at(-1);
-    expect(card?.body.reply_markup.inline_keyboard[0][0].callback_data).toBe("o:confirm:hotuba");
+    expect(card?.body["reply_markup"].inline_keyboard[0][0].callback_data).toBe("o:confirm:hotuba");
     expect(mocks.from.mock.calls.some(([table]) => table === "messages")).toBe(false);
   });
 });
