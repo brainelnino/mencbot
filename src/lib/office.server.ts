@@ -78,7 +78,7 @@ export async function handleOfficeUpdate(office: OfficeKey, token: string, updat
   }
 
   const c = parseRaisiCommand(msg.text);
-  const audit = (action: string, details: { [k: string]: string }) => db.from("audit_events").insert({ action, target_type: "office", target_id: office, details });
+  const audit = (action: string, details: { [k: string]: string }) => db.from("audit_events").insert({ action, target_type: "office", target_id: office, details: details as never });
   try {
     switch (c.cmd) {
       case "menu": await say(RAISI_MENU, { reply_markup: KEYBOARD }); break;
