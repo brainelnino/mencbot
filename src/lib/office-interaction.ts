@@ -19,7 +19,7 @@ export function parseRaisiCommand(text: string): RaisiCommand {
   if ((name === "ripoti" || name === "viongozi") && !args) return { cmd: name };
   if (["teua", "ondoa", "hamisha", "hotuba"].includes(name) && !args) return { cmd: "prompt", action: name as "teua" | "ondoa" | "hamisha" | "hotuba" };
   const parts = args.split(/\s+/);
-  if (name === "teua" && parts.length === 2 && /^[a-z]|\d+$/i.test(parts[0] ?? "") && /^(?:[A-Za-z]|\d{2,10})$/.test(parts[0] ?? "") && /^[2-9]$/.test(parts[1] ?? "")) return { cmd: "teua", label: (parts[0] ?? "").toUpperCase(), slot: Number(parts[1]) };
+  if (name === "teua" && parts.length === 2 && /^(?:[A-Za-z]|\d{2,10})$/.test(parts[0] ?? "") && /^[2-9]$/.test(parts[1] ?? "")) return { cmd: "teua", label: (parts[0] ?? "").toUpperCase(), slot: Number(parts[1]) };
   if (name === "ondoa" && /^[2-9]$/.test(args)) return { cmd: "ondoa", slot: Number(args) };
   if (name === "hamisha" && parts.length === 2 && parts.every((p) => /^[2-9]$/.test(p)) && parts[0] !== parts[1]) return { cmd: "hamisha", from: Number(parts[0]), to: Number(parts[1]) };
   if (name === "hotuba" && args.length >= 2 && args.length <= 3500) return { cmd: "hotuba", body: args };

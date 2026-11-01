@@ -61,7 +61,16 @@ export async function handleOfficeUpdate(office: OfficeKey, token: string, updat
     await say(`${SLOT_TITLES[slot]}\n\n${t.office.unavailable}`);
     return;
   }
-  const home = () => say(t.office.home, { reply_markup: officeHomeKeyboard });
+  const home = async () => {
+    // Upgrade already-connected bots when their leader opens the new menu.
+    const info = await botCall<{ url: string; allowed_updates?: string[] }>(token, "getWebhookInfo");
+    if (info.url && !info.allowed_updates?.includes("callback_query")) {
+      const { data: config, error } = await db.from("office_bots").select("webhook_secret").eq("office", office).single();
+      if (error) throw error;
+      if (config?.webhook_secret) await botCall(token, "setWebhook", { url: info.url, secret_token: config.webhook_secret, allowed_updates: ["message", "callback_query"], drop_pending_updates: false });
+    }
+    return say(t.office.home, { reply_markup: officeHomeKeyboard });
+  };
   const prompt = (text: string) => say(text, { reply_markup: { force_reply: true, selective: true } });
   let c = cb ? parseOfficeCallback(cb.data ?? "") : parseRaisiCommand(msg.text ?? "");
   const preview = async (command: RaisiCommand) => {
@@ -104,7 +113,9 @@ export async function handleOfficeUpdate(office: OfficeKey, token: string, updat
   if (mutates && !cb) { await preview(c); return; }
   if (mutates && cb && msg.message_id) {
     // A confirmation card can execute only once, even if its button is pressed repeatedly.
-    const { error: used } = await db.from("office_updates").insert({ office, update_id: -msg.message_id });
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${token.split(":")[0]}:${actor.id}:${msg.message_id}`));
+    const key = Array.from(new Uint8Array(digest).slice(0, 6), (b) => b.toString(16).padStart(2, "0")).join("");
+    const { error: used } = await db.from("office_updates").insert({ office, update_id: -Math.max(1, Number.parseInt(key, 16)) });
     if (used) { if (used.code !== "23505") throw used; await say(t.office.stale); return; }
     await botCall(token, "editMessageReplyMarkup", { chat_id, message_id: msg.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
   }
@@ -156,7 +167,7 @@ export async function handleOfficeUpdate(office: OfficeKey, token: string, updat
         if (error) throw error;
         await audit("raisi.hotuba", { message_id: row.id });
         const { publishMessage } = await import("./telegram.server");
-                await publishMessage(row.id);
+        await publishMessage(row.id);
         await say(t.office.speechDone, { reply_markup: officeBackKeyboard });
         break;
       }
