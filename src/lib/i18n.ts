@@ -24,6 +24,13 @@ export const sw = {
     blockedTerm: "⚠️ Ujumbe haujatumwa: haturuhusu maneno yasiofaa au matusi.",
   },
   assistants: { title: "Wasimamizi wa Telegram", label: "ID ya mwanachama", choose: "Chagua mwanachama…", slot: "Nafasi", appoint: "Teua", success: "Msimamizi ameteuliwa", active: "Hai", inactive: "Imezimwa", enable: "Washa", disable: "Zima", empty: "Hakuna wasimamizi wa Telegram bado." },
+  office: {
+    home: "👳🏾 <b>Ofisi ya Raisi</b>", report: "📊 Hali ya nchi", leaders: "🏛 Viongozi", appoint: "👤 Teua kiongozi", remove: "➖ Ondoa cheo", move: "🔄 Hamisha kiongozi", speech: "📣 Hotuba", back: "🏠 Menyu", cancel: "✖ Ghairi", confirm: "✅ Thibitisha", send: "📣 Tuma hotuba",
+    chooseAppoint: "👤 Chagua nafasi ya kiongozi mpya", chooseRemove: "➖ Chagua nafasi ya kuondoa cheo", chooseFrom: "🔄 Chagua nafasi ya kiongozi wa kuhamisha", chooseTo: "🔄 Chagua nafasi mpya",
+    idPrompt: (slot: number) => `👤 Nafasi ${slot}\nAndika ID ya mwanachama.`,
+    speechPrompt: "📣 Andika hotuba yako.", speechPreview: "📣 HAKIKI HOTUBA",
+    preview: "🔎 <b>Hakiki uamuzi</b>", invalidId: "⚠️ ID si sahihi. Weka namba au herufi moja ya utambulisho.", invalidSpeech: "⚠️ Hotuba iwe na herufi 2 hadi 3500.", denied: "🚫 Eneo hili ni kwa viongozi wa ofisi hii pekee.", unavailable: "Zana za ofisi hii bado hazijafunguliwa.", stale: "Chaguo hili halipatikani. Fungua menyu tena.", done: "✅ Imekamilika.", speechDone: "✅ Hotuba imetumwa.",
+  },
   publicPrivacy: "Utambulisho wako halisi haufichuliwi.",
   publicEmpty: "Bado hakuna ujumbe uliochapishwa.",
 } as const;

@@ -2,7 +2,7 @@
 - [x] Enable Google sign-in for the owner; restrict web administration to the owner in database permissions.
 - [x] Let the owner appoint Telegram assistants by existing public ID into slots 1–9.
 - [x] Test delivery, sign-in UI, and live Telegram configuration.
-- [ ] Verify owner appointment end-to-end: blocked because no web account or owner has been registered yet.
+- [x] Owner confirmed successful appointment of member 10 into slot 1.
 - [x] Exclude the sender from private message delivery; verified on a live message.
 - [x] Link Telegram replies across recipient chats with safe original-message context; transactional database tests and automated tests passed.
 - [x] Quote-format public sender identities; live delivery succeeded and automated tests passed.
@@ -14,3 +14,5 @@
 
 - [x] Leadership office bots: token management on web, Raisi office commands
 - [ ] Mbunge, Polisi, Mwenyekiti, Mjumbe/Mgambo office tools (next phases)
+- [x] Fix unrecognized Raisi commands and replace command-only interaction with Telegram buttons, guided input, and previews; automated workflow tests pass.
+- [ ] Verify new menu inside the real Raisi Telegram bot after publishing; external Telegram account interaction unavailable here.

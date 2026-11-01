@@ -36,7 +36,7 @@ export const saveOfficeToken = createServerFn({ method: "POST" })
     const { data: old } = await supabaseAdmin.from("office_bots").select("bot_token").eq("office", data.office).single();
     const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
     const url = officeUrl(new URL(getRequest().url).origin, data.office);
-    await botCall(data.token, "setWebhook", { url, secret_token: secret, allowed_updates: ["message"], drop_pending_updates: true });
+    await botCall(data.token, "setWebhook", { url, secret_token: secret, allowed_updates: ["message", "callback_query"], drop_pending_updates: false });
     await botCall(data.token, "setMyCommands", { commands: data.office === "raisi"
       ? [{ command: "menu", description: "Menyu ya ofisi" }, { command: "ripoti", description: "Hali ya nchi" }, { command: "viongozi", description: "Viongozi wote" }]
       : [{ command: "menu", description: "Menyu ya ofisi" }] }).catch(() => undefined);
