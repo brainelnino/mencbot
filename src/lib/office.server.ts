@@ -30,7 +30,7 @@ export const RAISI_MENU = [
 
 const KEYBOARD = { keyboard: [[{ text: "/ripoti" }, { text: "/viongozi" }], [{ text: "/menu" }]], resize_keyboard: true };
 
-type Upd = { update_id: number; message?: { chat: { id: number; type: string }; from?: { id: number }; text?: string } };
+type Upd = { update_id: number; message?: { chat: { id: number; type: string }; from?: { id: number } | undefined; text?: string | undefined } | undefined };
 
 /** Parses a Raisi command; pure for tests. */
 export function parseRaisiCommand(text: string):
@@ -78,7 +78,7 @@ export async function handleOfficeUpdate(office: OfficeKey, token: string, updat
   }
 
   const c = parseRaisiCommand(msg.text);
-  const audit = (action: string, details: Record<string, unknown>) => db.from("audit_events").insert({ action, target_type: "office", target_id: office, details });
+  const audit = (action: string, details: { [k: string]: string }) => db.from("audit_events").insert({ action, target_type: "office", target_id: office, details: details as never });
   try {
     switch (c.cmd) {
       case "menu": await say(RAISI_MENU, { reply_markup: KEYBOARD }); break;
