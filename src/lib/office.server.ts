@@ -30,7 +30,7 @@ export const RAISI_MENU = [
 
 const KEYBOARD = { keyboard: [[{ text: "/ripoti" }, { text: "/viongozi" }], [{ text: "/menu" }]], resize_keyboard: true };
 
-type Upd = { update_id: number; message?: { chat: { id: number; type: string }; from?: { id: number }; text?: string } };
+type Upd = { update_id: number; message?: { chat: { id: number; type: string }; from?: { id: number } | undefined; text?: string | undefined } | undefined };
 
 /** Parses a Raisi command; pure for tests. */
 export function parseRaisiCommand(text: string):
