@@ -14,3 +14,4 @@
 
 - [x] Leadership office bots: token management on web, Raisi office commands
 - [ ] Mbunge, Polisi, Mwenyekiti, Mjumbe/Mgambo office tools (next phases)
+- [ ] Fix unrecognized Raisi commands and replace command-only interaction with Telegram buttons, guided input, and previews.
