@@ -57,6 +57,13 @@
       "when": 1793708798394,
       "tag": "0007_brand_media_exemptions",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793720195226,
+      "tag": "0008_allow_media_broadcast",
+      "breakpoints": true
     }
   ]
 }
