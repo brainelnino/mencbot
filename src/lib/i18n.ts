@@ -7,7 +7,7 @@ export const sw = {
     moderation: "Udhibiti",
     members: "Wanachama",
     admins: "Wasimamizi",
-    brain: "EL-NINO Brain",
+    brain: "Live Chat bot Brain",
     settings: "Mipangilio",
   },
   empty: "Hakuna data bado.",
@@ -16,7 +16,7 @@ export const sw = {
   notConnected: "Haijaunganishwa bado",
   auth: { google: "Ingia kwa Google", owner: "Mmiliki mkuu", ownerOnly: "Dashibodi ya mmiliki mkuu pekee.", email: "Barua pepe", password: "Nenosiri", signin: "Ingia", signup: "Fungua akaunti", busy: "Subiri…", confirm: "Angalia barua pepe yako kuthibitisha akaunti.", failed: "Imeshindikana", toggleIn: "Una akaunti? Ingia", toggleUp: "Huna akaunti? Jisajili" },
   telegram: {
-    welcome: (label: string) => `Karibu EL-NINO 🇹🇿\n${label}`,
+    welcome: (label: string) => `Karibu Live Chat bot 🇹🇿\n${label}`,
     welcomeBack: (label: string) => `Karibu tena 🇹🇿\n${label}`,
     startFirst: "Tuma /start kwanza.", textOnly: "Maandishi pekee kwa sasa.", exhausted: "Nafasi za usajili zimejaa kwa sasa.",
     adminMenu: (slot: number) => `Msimamizi ${slot}\n/zuia ID\n/rudisha ID`,

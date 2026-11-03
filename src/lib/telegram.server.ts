@@ -1,7 +1,8 @@
 // Server-only Telegram service. Never import from browser code.
-import { classifyUpdate, findBlockedTerm, hasBlockedContent, type TgUpdate } from "./telegram-parse";
+import { classifyUpdate, findBlockedTerm, hasLink, hasPhone, type TgUpdate } from "./telegram-parse";
+import { contentRejection, parsePolicy } from "./content-policy";
 import { t } from "./i18n";
-import { telegramMessagePayload, telegramStoredMessageText, withReactionFooter } from "./telegram-format";
+import { buildMessageHtml, telegramMessagePayload, telegramStoredMessageText, withReactionFooter } from "./telegram-format";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/telegram";
 
@@ -53,8 +54,10 @@ async function recordConfig(patch: Record<string, unknown>) {
   if (data) await db.from("telegram_config").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", data.id);
 }
 
-const WELCOME_NEW = t.telegram.welcome;
-const WELCOME_BACK = t.telegram.welcomeBack;
+async function brandName() {
+  const { data } = await (await admin()).rpc("get_brand_name");
+  return data || "Live Chat bot";
+}
 
 /** Processes one verified update idempotently. */
 export async function handleUpdate(update: TgUpdate) {
@@ -85,20 +88,24 @@ export async function handleUpdate(update: TgUpdate) {
         }
         const row = data?.[0];
         if (!row) throw new Error("Usajili haukurudisha utambulisho");
-        await tg("sendMessage", { chat_id: c.chatId, text: row.is_new ? WELCOME_NEW(row.label) : WELCOME_BACK(row.label) });
+        await tg("sendMessage", { chat_id: c.chatId, text: row.is_new ? `Karibu ${await brandName()} 🇹🇿\n${row.label}` : t.telegram.welcomeBack(row.label) });
         log("info", "registered", { is_new: row.is_new });
         break;
       }
-      case "private_text": {
-        const { data: mem } = await db.from("members").select("id,status,public_identities(label)").eq("telegram_user_id", c.userId).maybeSingle();
+      case "private_text":
+      case "private_media": {
+        const media = c.kind === "private_media" ? c.media : null;
+        const { data: mem } = await db.from("members").select("id,status,can_send_restricted,public_identities(label)").eq("telegram_user_id", c.userId).maybeSingle();
         const label = (mem?.public_identities as { label: string } | null)?.label;
         if (!mem || !label) {
           await tg("sendMessage", { chat_id: c.chatId, text: "Tuma /start kwanza ili kujisajili." });
           break;
         }
         if (mem.status !== "active") { status = "ignored"; break; }
-        if (hasBlockedContent(c.text)) {
-          await tg("sendMessage", { chat_id: c.chatId, text: "⚠️ Ujumbe haujatumwa: link na namba za simu haziruhusiwi." });
+        const { data: policyRow } = await db.from("system_settings").select("value").eq("key", "content_policy").maybeSingle();
+        const rejection = contentRejection(parsePolicy(policyRow?.value), mem.can_send_restricted, media, hasLink(c.text), hasPhone(c.text));
+        if (rejection) {
+          await tg("sendMessage", { chat_id: c.chatId, text: rejection === "media" ? "⚠️ Ujumbe haujatumwa: aina hii ya faili/picha hairuhusiwi kwa sasa." : "⚠️ Ujumbe haujatumwa: link na namba za simu haziruhusiwi." });
           status = "ignored"; break;
         }
         const { data: termRows, error: termError } = await db.from("blocked_terms").select("term");
@@ -114,8 +121,8 @@ export async function handleUpdate(update: TgUpdate) {
           replyToId = parent;
         }
         const { error } = await db.from("messages").upsert({
-          member_id: mem.id, sender_label: label, kind: "text", body: c.text,
-          reply_to_id: replyToId, telegram_chat_message_ref: { message_id: c.messageId },
+          member_id: mem.id, sender_label: label, kind: media === "photo" ? "image" : "text", body: c.text || null,
+          reply_to_id: replyToId, telegram_chat_message_ref: { message_id: c.messageId, chat_id: c.chatId, media },
           source_update_id: update.update_id, moderation_status: "pending",
           publication_status: "unpublished", processing_status: "awaiting_moderation",
         }, { onConflict: "source_update_id", ignoreDuplicates: true });
@@ -144,13 +151,13 @@ export async function handleUpdate(update: TgUpdate) {
         break;
       }
       case "private_other":
-        await tg("sendMessage", { chat_id: c.chatId, text: "Kwa sasa ujumbe wa maandishi pekee unakubaliwa." });
+        await tg("sendMessage", { chat_id: c.chatId, text: "Aina hii ya ujumbe haitumiki kwa sasa." });
         break;
       case "group_link": {
         const { data: cfg } = await db.from("telegram_config").select("id,group_link_code,group_link_expires_at").limit(1).maybeSingle();
         const valid = cfg?.group_link_code && cfg.group_link_code === c.code && cfg.group_link_expires_at && new Date(cfg.group_link_expires_at) > new Date();
         if (!valid || !cfg) { status = "ignored"; break; }
-        const sent = await tg<{ message_id: number }>("sendMessage", { chat_id: c.chatId, text: "✅ Kikundi hiki kimeunganishwa na EL-NINO. Ujumbe ulioidhinishwa utachapishwa hapa." });
+        const sent = await tg<{ message_id: number }>("sendMessage", { chat_id: c.chatId, text: "✅ Kikundi hiki kimeunganishwa na Live Chat bot. Ujumbe ulioidhinishwa utachapishwa hapa." });
         await db.from("telegram_config").update({
           public_group_chat_id: c.chatId, group_title: c.title, group_verified_at: new Date().toISOString(),
           group_link_code: null, group_link_expires_at: null,
@@ -180,6 +187,9 @@ export async function publishMessage(messageId: string) {
   const db = await admin();
   const { error } = await db.rpc("enqueue_private_message", { _message_id: messageId });
   if (error) throw error;
+  const { data: src, error: srcErr } = await db.from("messages").select("telegram_chat_message_ref").eq("id", messageId).single();
+  if (srcErr) throw srcErr;
+  const ref = mediaRef(src.telegram_chat_message_ref);
   for (let batch = 0; batch < 5; batch++) {
     const { data: rows, error: claimError } = await db.rpc("claim_private_deliveries_v2", { _message_id: messageId });
     if (claimError) throw claimError;
@@ -188,7 +198,13 @@ export async function publishMessage(messageId: string) {
     await Promise.all(rows.map(async (row) => {
       let patch: { status: string; sent_at?: string; telegram_message_id?: number; last_error: string | null };
       try {
-        const sent = await tg<{ message_id: number }>("sendMessage", telegramMessagePayload(row));
+        const sent = ref
+          ? await tg<{ message_id: number }>("copyMessage", {
+              chat_id: row.chat_id, from_chat_id: ref.chat_id, message_id: ref.message_id,
+              ...(ref.media === "sticker" ? {} : { parse_mode: "HTML", caption: buildMessageHtml(row, !row.reply_message_id, 900) }),
+              ...(row.reply_message_id ? { reply_parameters: { message_id: row.reply_message_id, allow_sending_without_reply: true } } : {}),
+            })
+          : await tg<{ message_id: number }>("sendMessage", telegramMessagePayload(row));
         patch = { status: "sent", sent_at: new Date().toISOString(), telegram_message_id: sent.message_id, last_error: null };
       } catch (e) {
         const permanent = e instanceof TelegramError && (e.status === 403 || e.status === 400);
@@ -211,26 +227,33 @@ export async function publishMessage(messageId: string) {
   if (finishError) throw finishError;
 }
 
+function mediaRef(v: unknown): { chat_id: number; message_id: number; media: string } | null {
+  const r = v as { chat_id?: number; message_id?: number; media?: string | null } | null;
+  return r?.media && r.chat_id && r.message_id ? { chat_id: r.chat_id, message_id: r.message_id, media: r.media } : null;
+}
+
 /** Edits every delivered copy so anonymous aggregate reaction counts appear on the message itself. Failures never fail the update. */
 async function syncReactionEdits(messageId: string) {
   const db = await admin();
   const { data: summary, error: summaryError } = await db.rpc("get_reaction_summary", { _message_id: messageId });
   if (summaryError) throw summaryError;
-  const { data: msg, error: msgError } = await db.from("messages").select("sender_label, body, reply_to_id").eq("id", messageId).single();
+  const { data: msg, error: msgError } = await db.from("messages").select("sender_label, body, reply_to_id, telegram_chat_message_ref").eq("id", messageId).single();
   if (msgError) throw msgError;
   let reply: { reply_label: string; reply_body: string | null } | undefined;
   if (msg.reply_to_id) {
     const { data: parent } = await db.from("messages").select("sender_label, body").eq("id", msg.reply_to_id).maybeSingle();
     if (parent) reply = { reply_label: parent.sender_label, reply_body: parent.body };
   }
-  const text = withReactionFooter(telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, ...reply }), summary ?? []);
+  const ref = mediaRef(msg.telegram_chat_message_ref);
+  if (ref?.media === "sticker") return;
+  const text = withReactionFooter(ref ? buildMessageHtml({ sender_label: msg.sender_label, body: msg.body, ...reply }, true, 900) : telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, ...reply }), summary ?? []);
   const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
   if (delError) throw delError;
   await Promise.all((deliveries ?? []).map(async (d) => {
     const chatId = (d.members as { telegram_user_id: number } | null)?.telegram_user_id;
     if (!chatId || !d.telegram_message_id) return;
     try {
-      await tg("editMessageText", { chat_id: chatId, message_id: d.telegram_message_id, parse_mode: "HTML", text });
+      await tg(ref ? "editMessageCaption" : "editMessageText", { chat_id: chatId, message_id: d.telegram_message_id, parse_mode: "HTML", ...(ref ? { caption: text } : { text }) });
     } catch (e) {
       // "message is not modified" or a deleted copy is expected; never fail the update.
       log("warn", "reaction_edit_failed", { error: e instanceof Error ? e.message : "error" });

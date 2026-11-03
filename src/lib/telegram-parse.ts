@@ -7,6 +7,8 @@ export type TgUpdate = {
     chat: { id: number; type: string; title?: string };
     text?: string;
     photo?: unknown[];
+    caption?: string;
+    video?: unknown; document?: unknown; voice?: unknown; audio?: unknown; sticker?: unknown; animation?: unknown; video_note?: unknown;
     reply_to_message?: { message_id: number };
   };
   message_reaction?: {
@@ -21,11 +23,25 @@ export type TgUpdate = {
 export type Classified =
   | { kind: "start"; userId: number; chatId: number }
   | { kind: "private_text"; userId: number; chatId: number; text: string; messageId: number; replyMessageId: number | null }
+  | { kind: "private_media"; userId: number; chatId: number; media: MediaType; text: string; messageId: number; replyMessageId: number | null }
   | { kind: "private_other"; userId: number; chatId: number }
   | { kind: "admin_command"; userId: number; chatId: number; command: "admin" | "zuia" | "rudisha"; label: string | undefined }
   | { kind: "group_link"; chatId: number; code: string; title: string | null }
   | { kind: "reaction"; userId: number; chatId: number; messageId: number; emoji: string | null }
   | { kind: "ignored"; reason: string };
+
+export type MediaType = "photo" | "video" | "document" | "voice" | "audio" | "sticker" | "animation";
+
+function detectMedia(m: NonNullable<TgUpdate["message"]>): MediaType | null {
+  if (m.photo?.length) return "photo";
+  if (m.animation) return "animation";
+  if (m.video || m.video_note) return "video";
+  if (m.document) return "document";
+  if (m.voice) return "voice";
+  if (m.audio) return "audio";
+  if (m.sticker) return "sticker";
+  return null;
+}
 
 export function classifyUpdate(u: TgUpdate): Classified {
   const r = u.message_reaction;
@@ -44,6 +60,8 @@ export function classifyUpdate(u: TgUpdate): Classified {
     const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
     if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
+    const media = detectMedia(m);
+    if (media) return { kind: "private_media", userId: m.from.id, chatId: m.chat.id, media, text: (m.caption ?? "").trim().slice(0, 1000), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     return { kind: "private_other", userId: m.from.id, chatId: m.chat.id };
   }
   if (m.chat.type === "group" || m.chat.type === "supergroup") {
@@ -77,16 +95,19 @@ export function publicWebhookUrl(origin: string) {
   return `https://${host}/api/public/telegram/webhook`;
 }
 
+export function hasLink(text: string): boolean {
+  return /(https?:\/\/|www\.|t\.me\/|wa\.me\/|\b[a-z0-9-]+\.(com|net|org|tz|co|io|me|info|biz|app|xyz|link|ly|gl|site|online|africa|ke|ug)\b)/i.test(text);
+}
+
+export function hasPhone(text: string): boolean {
+  // 7+ digits allowing spaces, dashes, dots, brackets, optional leading +
+  for (const m of text.match(/(\+?\d[\d\s().-]{5,}\d)/g) ?? []) if (m.replace(/\D/g, "").length >= 7) return true;
+  return false;
+}
+
 /** True when text contains a link or a phone number (any country format). */
 export function hasBlockedContent(text: string): boolean {
-  const link = /(https?:\/\/|www\.|t\.me\/|wa\.me\/|\b[a-z0-9-]+\.(com|net|org|tz|co|io|me|info|biz|app|xyz|link|ly|gl|site|online|africa|ke|ug)\b)/i;
-  if (link.test(text)) return true;
-  // 7+ digits allowing spaces, dashes, dots, brackets, optional leading +
-  const phone = /(\+?\d[\d\s().-]{5,}\d)/g;
-  for (const m of text.match(phone) ?? []) {
-    if (m.replace(/\D/g, "").length >= 7) return true;
-  }
-  return false;
+  return hasLink(text) || hasPhone(text);
 }
 
 /** Returns the first blocked term found in text (whole-word, case-insensitive), or null. */

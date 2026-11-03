@@ -13,9 +13,9 @@ import { useAuth } from "@/hooks/useAuth";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "EL-NINO — Ubongo wa Jamii | Mazungumzo ya Jamii" },
+      { title: "Live Chat bot — Ubongo wa Jamii | Mazungumzo ya Jamii" },
       { name: "description", content: "Jukwaa salama la mazungumzo ya wazi bila kujulikana kwa jamii ya Tanzania." },
-      { property: "og:title", content: "EL-NINO — Ubongo wa Jamii" },
+      { property: "og:title", content: "Live Chat bot — Ubongo wa Jamii" },
       { property: "og:description", content: t.tagline },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -72,7 +72,7 @@ function Index() {
             {[
               { i: MessagesSquare, h: "Mazungumzo ya wazi", p: "Kila mwanachama anaonekana kwa namba au herufi tu — kama 15, C au 122." },
               { i: ShieldCheck, h: "Usalama kwanza", p: "Utambulisho wako halisi haufichuliwi." },
-              { i: Brain, h: "EL-NINO Brain", p: "Uchambuzi wa mahitaji ya jamii — unakuja hivi karibuni." },
+              { i: Brain, h: "Live Chat bot Brain", p: "Uchambuzi wa mahitaji ya jamii — unakuja hivi karibuni." },
             ].map(({ i: Icon, h, p }) => (
               <li key={h} className="flex gap-3 rounded-xl border bg-card p-4">
                 <Icon className="mt-0.5 h-5 w-5 shrink-0 text-tz-green" />

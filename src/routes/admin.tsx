@@ -17,10 +17,10 @@ export const Route = createFileRoute("/admin")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Dashibodi — EL-NINO" },
-      { name: "description", content: "Dashibodi ya mmiliki na wasimamizi wa EL-NINO." },
-      { property: "og:title", content: "Dashibodi — EL-NINO" },
-      { property: "og:description", content: "Usimamizi wa jamii ya EL-NINO." },
+      { title: "Dashibodi — Live Chat bot" },
+      { name: "description", content: "Dashibodi ya mmiliki na wasimamizi wa Live Chat bot." },
+      { property: "og:title", content: "Dashibodi — Live Chat bot" },
+      { property: "og:description", content: "Usimamizi wa jamii ya Live Chat bot." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "robots", content: "noindex" },
@@ -84,7 +84,7 @@ function AdminLayout() {
           <Link key={to} to={to} activeOptions={{ exact: to === "/admin" }}
             className="flex flex-col items-center gap-0.5 rounded-md px-1.5 py-1 text-[9px] text-muted-foreground data-[status=active]:text-primary">
             <Icon className="h-5 w-5" />
-            <span className="max-w-14 truncate">{label.replace("EL-NINO ", "")}</span>
+            <span className="max-w-14 truncate">{label.replace("Live Chat bot ", "")}</span>
           </Link>
         ))}
       </nav>

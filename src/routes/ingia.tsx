@@ -14,9 +14,9 @@ export const Route = createFileRoute("/ingia")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Ingia — EL-NINO Mmiliki" },
-      { name: "description", content: "Weka PIN kufungua dashibodi ya EL-NINO." },
-      { property: "og:title", content: "Ingia — EL-NINO Mmiliki" },
+      { title: "Ingia — Live Chat bot Mmiliki" },
+      { name: "description", content: "Weka PIN kufungua dashibodi ya Live Chat bot." },
+      { property: "og:title", content: "Ingia — Live Chat bot Mmiliki" },
       { property: "og:description", content: "Dashibodi ya mmiliki mkuu." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

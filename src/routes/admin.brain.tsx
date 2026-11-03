@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Brain } from "lucide-react";
 import { PageHeader, Pill } from "@/components/admin/States";
 
-export const Route = createFileRoute("/admin/brain")({ head: () => adminHead("EL-NINO Brain"), component: BrainPage });
+export const Route = createFileRoute("/admin/brain")({ head: () => adminHead("Live Chat bot Brain"), component: BrainPage });
 
 const PLANNED = [
   "Kutambua mada zinazojirudia",
@@ -24,7 +24,7 @@ const EVIDENCE = [
 function BrainPage() {
   return (
     <div>
-      <PageHeader title="EL-NINO Brain" desc="Injini ya uchambuzi wa jamii.">
+      <PageHeader title="Live Chat bot Brain" desc="Injini ya uchambuzi wa jamii.">
         <Pill tone="warn">Haifanyi kazi bado</Pill>
       </PageHeader>
       <div className="rounded-2xl border bg-card p-6">
