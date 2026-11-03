@@ -378,6 +378,7 @@ export type Database = {
       }
       members: {
         Row: {
+          can_send_restricted: boolean
           id: string
           last_active_at: string | null
           registered_at: string
@@ -386,6 +387,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          can_send_restricted?: boolean
           id?: string
           last_active_at?: string | null
           registered_at?: string
@@ -394,6 +396,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          can_send_restricted?: boolean
           id?: string
           last_active_at?: string | null
           registered_at?: string
@@ -958,6 +961,7 @@ export type Database = {
         Args: { _message_id: string }
         Returns: undefined
       }
+      get_brand_name: { Args: never; Returns: string }
       get_dashboard_stats: { Args: never; Returns: Json }
       get_public_messages: {
         Args: { _limit?: number }
@@ -1029,6 +1033,10 @@ export type Database = {
       resolve_telegram_reply: {
         Args: { _member_id: string; _telegram_message_id: number }
         Returns: string
+      }
+      set_member_exempt: {
+        Args: { _exempt: boolean; _member_id: string }
+        Returns: undefined
       }
       set_telegram_admin_active: {
         Args: { _active: boolean; _id: string }

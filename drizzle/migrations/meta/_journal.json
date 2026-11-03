@@ -50,6 +50,13 @@
       "when": 1792923708396,
       "tag": "0006_office_bots",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793708798394,
+      "tag": "0007_brand_media_exemptions",
+      "breakpoints": true
     }
   ]
 }
