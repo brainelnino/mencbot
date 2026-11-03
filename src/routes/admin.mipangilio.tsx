@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Loading, ErrorState, PageHeader, Pill, NoAccess } from "@/components/admin/States";
 import { TelegramPanel } from "@/components/admin/TelegramPanel";
+import { BrandContentPanel } from "@/components/admin/BrandContentPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -40,6 +41,7 @@ function SettingsPage() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="Mipangilio" desc="Mabadiliko yote yanarekodiwa kwenye kumbukumbu za ukaguzi." />
+      <BrandContentPanel />
 
       <section>
         <h2 className="mb-1 text-sm font-semibold">Vizazi vya utambulisho</h2>
