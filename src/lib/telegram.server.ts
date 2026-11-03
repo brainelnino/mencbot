@@ -157,7 +157,7 @@ export async function handleUpdate(update: TgUpdate) {
         const { data: cfg } = await db.from("telegram_config").select("id,group_link_code,group_link_expires_at").limit(1).maybeSingle();
         const valid = cfg?.group_link_code && cfg.group_link_code === c.code && cfg.group_link_expires_at && new Date(cfg.group_link_expires_at) > new Date();
         if (!valid || !cfg) { status = "ignored"; break; }
-        const sent = await tg<{ message_id: number }>("sendMessage", { chat_id: c.chatId, text: "✅ Kikundi hiki kimeunganishwa na EL-NINO. Ujumbe ulioidhinishwa utachapishwa hapa." });
+        const sent = await tg<{ message_id: number }>("sendMessage", { chat_id: c.chatId, text: "✅ Kikundi hiki kimeunganishwa na Live Chat bot. Ujumbe ulioidhinishwa utachapishwa hapa." });
         await db.from("telegram_config").update({
           public_group_chat_id: c.chatId, group_title: c.title, group_verified_at: new Date().toISOString(),
           group_link_code: null, group_link_expires_at: null,
