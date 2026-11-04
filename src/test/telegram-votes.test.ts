@@ -4,10 +4,10 @@ import { classifyUpdate } from "@/lib/telegram-parse";
 
 describe("✅/❌ vote buttons", () => {
   it("shows plain buttons with no votes", () => {
-    expect(voteKeyboard().inline_keyboard[0].map((b) => b.text)).toEqual(["✅", "❌"]);
+    expect(voteKeyboard().inline_keyboard[0]!.map((b) => b.text)).toEqual(["✅", "❌"]);
   });
   it("shows anonymous counts", () => {
-    expect(voteKeyboard([{ emoji: "✅", total: 3 }]).inline_keyboard[0].map((b) => b.text)).toEqual(["✅ 3", "❌"]);
+    expect(voteKeyboard([{ emoji: "✅", total: 3 }]).inline_keyboard[0]!.map((b) => b.text)).toEqual(["✅ 3", "❌"]);
   });
   it("classifies a button press in a private chat", () => {
     const c = classifyUpdate({ update_id: 1, callback_query: { id: "q", from: { id: 9 }, data: "v:❌", message: { message_id: 4, chat: { id: 9, type: "private" } } } });
