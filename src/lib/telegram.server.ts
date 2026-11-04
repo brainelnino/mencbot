@@ -2,7 +2,7 @@
 import { classifyUpdate, findBlockedTerm, hasLink, hasPhone, type TgUpdate } from "./telegram-parse";
 import { contentRejection, parsePolicy } from "./content-policy";
 import { t } from "./i18n";
-import { buildMessageHtml, telegramMessagePayload, telegramStoredMessageText, withReactionFooter } from "./telegram-format";
+import { buildMessageHtml, telegramMessagePayload, telegramStoredMessageText, voteKeyboard, withReactionFooter } from "./telegram-format";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/telegram";
 
@@ -150,6 +150,24 @@ export async function handleUpdate(update: TgUpdate) {
         await syncReactionEdits(reactionMessageId);
         break;
       }
+      case "vote": {
+        // Pressing the same button again removes the vote; votes stay anonymous.
+        const { data: mem } = await db.from("members").select("id").eq("telegram_user_id", c.userId).maybeSingle();
+        let emoji = c.emoji;
+        if (mem) {
+          const { data: target } = await db.from("telegram_deliveries").select("message_id").eq("member_id", mem.id).eq("telegram_message_id", c.messageId).eq("status", "sent").maybeSingle();
+          if (target) {
+            const { data: cur } = await db.from("message_reactions").select("emoji").eq("message_id", target.message_id).eq("member_id", mem.id).maybeSingle();
+            if (cur?.emoji === c.emoji) emoji = "";
+          }
+        }
+        const { data: voteMessageId, error } = await db.rpc("record_telegram_reaction", { _tg_user_id: c.userId, _telegram_message_id: c.messageId, _emoji: emoji });
+        await tg("answerCallbackQuery", { callback_query_id: c.callbackId, text: error || !voteMessageId ? "" : emoji ? `${emoji} Umepiga kura` : "Kura imeondolewa" }).catch(() => {});
+        if (error) throw error;
+        if (!voteMessageId) { status = "ignored"; break; }
+        await syncReactionEdits(voteMessageId);
+        break;
+      }
       case "private_other":
         await tg("sendMessage", { chat_id: c.chatId, text: "Aina hii ya ujumbe haitumiki kwa sasa." });
         break;
@@ -203,8 +221,9 @@ export async function publishMessage(messageId: string) {
               chat_id: row.chat_id, from_chat_id: ref.chat_id, message_id: ref.message_id,
               ...(ref.media === "sticker" ? {} : { parse_mode: "HTML", caption: buildMessageHtml(row, !row.reply_message_id, 900) }),
               ...(row.reply_message_id ? { reply_parameters: { message_id: row.reply_message_id, allow_sending_without_reply: true } } : {}),
+              reply_markup: voteKeyboard(),
             })
-          : await tg<{ message_id: number }>("sendMessage", telegramMessagePayload(row));
+          : await tg<{ message_id: number }>("sendMessage", { ...telegramMessagePayload(row), reply_markup: voteKeyboard() });
         patch = { status: "sent", sent_at: new Date().toISOString(), telegram_message_id: sent.message_id, last_error: null };
       } catch (e) {
         const permanent = e instanceof TelegramError && (e.status === 403 || e.status === 400);
@@ -245,15 +264,17 @@ async function syncReactionEdits(messageId: string) {
     if (parent) reply = { reply_label: parent.sender_label, reply_body: parent.body };
   }
   const ref = mediaRef(msg.telegram_chat_message_ref);
-  if (ref?.media === "sticker") return;
-  const text = withReactionFooter(ref ? buildMessageHtml({ sender_label: msg.sender_label, body: msg.body, ...reply }, true, 900) : telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, ...reply }), summary ?? []);
+  const sticker = ref?.media === "sticker";
+  const reply_markup = voteKeyboard(summary ?? []);
+  const text = withReactionFooter(ref ? buildMessageHtml({ sender_label: msg.sender_label, body: msg.body, ...reply }, true, 900) : telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, ...reply }), (summary ?? []).filter((r) => r.emoji !== "✅" && r.emoji !== "❌"));
   const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
   if (delError) throw delError;
   await Promise.all((deliveries ?? []).map(async (d) => {
     const chatId = (d.members as { telegram_user_id: number } | null)?.telegram_user_id;
     if (!chatId || !d.telegram_message_id) return;
     try {
-      await tg(ref ? "editMessageCaption" : "editMessageText", { chat_id: chatId, message_id: d.telegram_message_id, parse_mode: "HTML", ...(ref ? { caption: text } : { text }) });
+      if (sticker) await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: d.telegram_message_id, reply_markup });
+      else await tg(ref ? "editMessageCaption" : "editMessageText", { chat_id: chatId, message_id: d.telegram_message_id, parse_mode: "HTML", reply_markup, ...(ref ? { caption: text } : { text }) });
     } catch (e) {
       // "message is not modified" or a deleted copy is expected; never fail the update.
       log("warn", "reaction_edit_failed", { error: e instanceof Error ? e.message : "error" });

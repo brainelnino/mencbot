@@ -17,6 +17,12 @@ const updateSchema = z.object({
     user: z.object({ id: z.number().int() }).passthrough().optional(),
     new_reaction: z.array(z.object({ type: z.string(), emoji: z.string().optional() }).passthrough()).optional(),
   }).passthrough().optional(),
+  callback_query: z.object({
+    id: z.string(),
+    from: z.object({ id: z.number().int() }).passthrough(),
+    data: z.string().max(64).optional(),
+    message: z.object({ message_id: z.number().int(), chat: z.object({ id: z.number().int(), type: z.string() }).passthrough() }).passthrough().optional(),
+  }).passthrough().optional(),
 }).passthrough();
 
 export const Route = createFileRoute("/api/public/telegram/webhook")({

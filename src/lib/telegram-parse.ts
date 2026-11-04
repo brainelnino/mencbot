@@ -17,6 +17,12 @@ export type TgUpdate = {
     user?: { id: number };
     new_reaction?: Array<{ type: string; emoji?: string }>;
   };
+  callback_query?: {
+    id: string;
+    from: { id: number };
+    data?: string;
+    message?: { message_id: number; chat: { id: number; type: string } };
+  };
   [k: string]: unknown;
 };
 
@@ -28,6 +34,7 @@ export type Classified =
   | { kind: "admin_command"; userId: number; chatId: number; command: "admin" | "zuia" | "rudisha"; label: string | undefined }
   | { kind: "group_link"; chatId: number; code: string; title: string | null }
   | { kind: "reaction"; userId: number; chatId: number; messageId: number; emoji: string | null }
+  | { kind: "vote"; userId: number; chatId: number; messageId: number; emoji: string; callbackId: string }
   | { kind: "ignored"; reason: string };
 
 export type MediaType = "photo" | "video" | "document" | "voice" | "audio" | "sticker" | "animation";
@@ -44,6 +51,12 @@ function detectMedia(m: NonNullable<TgUpdate["message"]>): MediaType | null {
 }
 
 export function classifyUpdate(u: TgUpdate): Classified {
+  const cb = u.callback_query;
+  if (cb) {
+    const v = /^v:(✅|❌)$/.exec(cb.data ?? "");
+    if (!v?.[1] || !cb.message || cb.message.chat.type !== "private") return { kind: "ignored", reason: "callback_scope" };
+    return { kind: "vote", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, emoji: v[1], callbackId: cb.id };
+  }
   const r = u.message_reaction;
   if (r) {
     if (r.chat?.type !== "private" || !r.user) return { kind: "ignored", reason: "reaction_scope" };
