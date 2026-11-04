@@ -266,7 +266,7 @@ async function syncReactionEdits(messageId: string) {
   const ref = mediaRef(msg.telegram_chat_message_ref);
   const sticker = ref?.media === "sticker";
   const reply_markup = voteKeyboard(summary ?? []);
-  const text = withReactionFooter(ref ? buildMessageHtml({ sender_label: msg.sender_label, body: msg.body, ...reply }, true, 900) : telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, ...reply }), summary ?? []);
+  const text = withReactionFooter(ref ? buildMessageHtml({ sender_label: msg.sender_label, body: msg.body, ...reply }, true, 900) : telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, ...reply }), (summary ?? []).filter((r) => r.emoji !== "✅" && r.emoji !== "❌"));
   const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
   if (delError) throw delError;
   await Promise.all((deliveries ?? []).map(async (d) => {
