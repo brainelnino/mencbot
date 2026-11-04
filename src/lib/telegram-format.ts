@@ -42,3 +42,14 @@ export function withReactionFooter(text: string, counts: Array<{ emoji: string; 
   const footer = `<blockquote>${counts.map((c) => `${c.emoji}×${c.total}`).join("  ")}</blockquote>`;
   return `${text}\n\n${footer}`;
 }
+export const VOTE_EMOJIS = ["✅", "❌"] as const;
+
+/** Inline ✅/❌ buttons with anonymous aggregate counts. */
+export function voteKeyboard(counts: Array<{ emoji: string; total: number | bigint }> = []) {
+  return {
+    inline_keyboard: [VOTE_EMOJIS.map((e) => {
+      const n = Number(counts.find((c) => c.emoji === e)?.total ?? 0);
+      return { text: n ? `${e} ${n}` : e, callback_data: `v:${e}` };
+    })],
+  };
+}
