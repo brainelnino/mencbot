@@ -13,6 +13,7 @@
 - [x] Fix assistant appointment: owner now picks a member from a dropdown of active IDs instead of typing, and the database returns specific errors (unknown ID, already an assistant, slot taken).
 
 - [x] Leadership office bots: token management on web, Raisi office commands
+- [ ] Owner controls for vote buttons on text and media, persisted and enforced on broadcasts and callbacks.
 - [ ] Mbunge, Polisi, Mwenyekiti, Mjumbe/Mgambo office tools (next phases)
 - [x] Fix unrecognized Raisi commands and replace command-only interaction with Telegram buttons, guided input, and previews; automated workflow tests pass.
 - [ ] Verify new menu inside the real Raisi Telegram bot after publishing; external Telegram account interaction unavailable here.

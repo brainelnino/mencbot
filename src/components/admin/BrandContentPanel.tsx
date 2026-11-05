@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useBrand } from "@/hooks/useBrand";
 import { parsePolicy, POLICY_LABELS, type ContentPolicy } from "@/lib/content-policy";
+import { parseVotePolicy, type VotePolicy } from "@/lib/vote-policy";
+import { t } from "@/lib/i18n";
+import { Loading, ErrorState } from "@/components/admin/States";
 
 async function saveSetting(key: string, value: unknown) {
   const { error } = await supabase.from("system_settings").upsert({ key, value: value as never, updated_at: new Date().toISOString() });
@@ -75,6 +78,8 @@ export function BrandContentPanel() {
         )}
       </section>
 
+      <VoteControls />
+
       <section>
         <h2 className="mb-1 text-sm font-semibold">ID maalumu (zinaruhusiwa kila kitu)</h2>
         <p className="mb-3 text-xs text-muted-foreground">Hawa wanaweza kutuma picha, faili, link na namba hata zikiwa zimezimwa. Maneno yaliyozuiliwa bado yanazuiwa.</p>
@@ -97,4 +102,33 @@ export function BrandContentPanel() {
       </section>
     </div>
   );
+}
+
+function VoteControls() {
+  const qc = useQueryClient();
+  const policy = useQuery({ queryKey: ["vote-policy"], queryFn: async () => {
+    const { data, error } = await supabase.from("system_settings").select("value").eq("key", "vote_policy").maybeSingle();
+    if (error) throw error;
+    return parseVotePolicy(data?.value);
+  } });
+  const save = useMutation({
+    mutationFn: (next: VotePolicy) => saveSetting("vote_policy", next),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["vote-policy"] });
+      await qc.invalidateQueries({ queryKey: ["settings"] });
+      toast.success(t.voteControls.saved);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  return <section>
+    <h2 className="mb-3 text-sm font-semibold">{t.voteControls.title}</h2>
+    {policy.isLoading ? <Loading /> : policy.error ? <ErrorState error={policy.error} /> : policy.data ? (
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {(["text", "media"] as const).map((key) => <li key={key} className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
+          <span>{t.voteControls[key]}</span>
+          <Switch aria-label={`${t.voteControls.title}: ${t.voteControls[key]}`} checked={policy.data[key]} disabled={save.isPending || policy.isFetching} onCheckedChange={(on) => save.mutate({ ...policy.data, [key]: on } as VotePolicy)} />
+        </li>)}
+      </ul>
+    ) : null}
+  </section>;
 }
