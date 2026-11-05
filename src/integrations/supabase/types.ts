@@ -873,6 +873,109 @@ export type Database = {
         }
         Relationships: []
       }
+      tenant_bots: {
+        Row: {
+          bot_token: string
+          bot_username: string
+          content_policy: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          last_error: string | null
+          owner_tg_user_id: number
+          updated_at: string
+          webhook_secret: string
+          welcome_message: string
+        }
+        Insert: {
+          bot_token: string
+          bot_username: string
+          content_policy?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_error?: string | null
+          owner_tg_user_id: number
+          updated_at?: string
+          webhook_secret: string
+          welcome_message?: string
+        }
+        Update: {
+          bot_token?: string
+          bot_username?: string
+          content_policy?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_error?: string | null
+          owner_tg_user_id?: number
+          updated_at?: string
+          webhook_secret?: string
+          welcome_message?: string
+        }
+        Relationships: []
+      }
+      tenant_members: {
+        Row: {
+          bot_id: string
+          created_at: string
+          id: string
+          label: string
+          status: string
+          tg_user_id: number
+        }
+        Insert: {
+          bot_id: string
+          created_at?: string
+          id?: string
+          label: string
+          status?: string
+          tg_user_id: number
+        }
+        Update: {
+          bot_id?: string
+          created_at?: string
+          id?: string
+          label?: string
+          status?: string
+          tg_user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_members_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_updates: {
+        Row: {
+          bot_id: string
+          created_at: string
+          update_id: number
+        }
+        Insert: {
+          bot_id: string
+          created_at?: string
+          update_id: number
+        }
+        Update: {
+          bot_id?: string
+          created_at?: string
+          update_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_updates_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_restrictions: {
         Row: {
           created_at: string
@@ -1028,6 +1131,13 @@ export type Database = {
           is_new: boolean
           label: string
           member_id: string
+        }[]
+      }
+      register_tenant_member: {
+        Args: { _bot_id: string; _tg_user_id: number }
+        Returns: {
+          is_new: boolean
+          label: string
         }[]
       }
       resolve_telegram_reply: {
