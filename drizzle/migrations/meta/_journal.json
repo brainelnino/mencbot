@@ -64,6 +64,13 @@
       "when": 1793720195226,
       "tag": "0008_allow_media_broadcast",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793871256976,
+      "tag": "0009_tenant_platform",
+      "breakpoints": true
     }
   ]
 }
