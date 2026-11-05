@@ -14,6 +14,7 @@ export const sw = {
   loading: "Inapakia…",
   error: "Hitilafu imetokea.",
   notConnected: "Haijaunganishwa bado",
+  voteControls: { title: "Vitufe vya maoni ✅ / ❌", text: "Ujumbe wa maandishi", media: "Picha na faili", saved: "Mipangilio ya vitufe imehifadhiwa", disabled: "Vitufe vya maoni vimezimwa" },
   auth: { google: "Ingia kwa Google", owner: "Mmiliki mkuu", ownerOnly: "Dashibodi ya mmiliki mkuu pekee.", email: "Barua pepe", password: "Nenosiri", signin: "Ingia", signup: "Fungua akaunti", busy: "Subiri…", confirm: "Angalia barua pepe yako kuthibitisha akaunti.", failed: "Imeshindikana", toggleIn: "Una akaunti? Ingia", toggleUp: "Huna akaunti? Jisajili" },
   telegram: {
     welcome: (label: string) => `Karibu Live Chat bot 🇹🇿\n${label}`,
