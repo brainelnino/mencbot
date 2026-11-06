@@ -30,8 +30,13 @@ export const Route = createFileRoute("/api/public/telegram/ofisi/$office")({
         if (!safeEqual(actual, bot.webhook_secret)) return new Response("Unauthorized", { status: 401 });
         let update;
         try { update = schema.parse(await request.json()); } catch { return new Response("Bad request", { status: 400 }); }
-        const { handleOfficeUpdate } = await import("@/lib/office.server");
         try {
+          if (params.office === "jukwaa") {
+            const { handlePlatformUpdate } = await import("@/lib/platform.server");
+            await handlePlatformUpdate(bot.bot_token, update as never, new URL(request.url).origin);
+            return Response.json({ ok: true });
+          }
+          const { handleOfficeUpdate } = await import("@/lib/office.server");
           await handleOfficeUpdate(params.office, bot.bot_token, update);
           return Response.json({ ok: true });
         } catch (e) {

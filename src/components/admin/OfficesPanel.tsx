@@ -47,7 +47,7 @@ export function OfficesPanel() {
             <span className="font-medium">{o.title}</span>
             <Pill tone={b?.is_active ? "ok" : "bad"}>{b?.is_active ? "Hai" : b?.bot_username ? "Imezimwa" : "Haijaunganishwa"}</Pill>
           </div>
-          <p className="text-xs text-muted-foreground">Nafasi: {o.slots.map((s) => `${s} ${SLOT_TITLES[s]}`).join(", ")}</p>
+          {o.slots.length > 0 && <p className="text-xs text-muted-foreground">Nafasi: {o.slots.map((s) => `${s} ${SLOT_TITLES[s]}`).join(", ")}</p>}
           {b?.bot_username && <p className="mt-1 text-sm">@{b.bot_username}</p>}
           {!o.ready && <p className="mt-1 text-xs text-muted-foreground">Zana za ofisi hii zinaandaliwa; kwa sasa bot inamkaribisha kiongozi tu.</p>}
           {b?.last_error && <p className="mt-1 text-xs text-destructive">{b.last_error}</p>}

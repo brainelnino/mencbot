@@ -1,5 +1,5 @@
 // Browser-safe office definitions shared by the web panel and the office bots.
-export type OfficeKey = "raisi" | "mbunge" | "polisi" | "mwenyekiti" | "ulinzi";
+export type OfficeKey = "raisi" | "mbunge" | "polisi" | "mwenyekiti" | "ulinzi" | "jukwaa";
 
 export const SLOT_TITLES: Record<number, string> = {
   1: "👳🏾 Raisi", 2: "🧑🏾‍⚖️ Mbunge", 3: "💂🏾 Mgambo", 4: "🧑🏾‍🦱 Mjumbe", 5: "🚔 Polisi",
@@ -12,6 +12,7 @@ export const OFFICES: { key: OfficeKey; title: string; slots: number[]; ready: b
   { key: "polisi", title: "🚔 Ofisi ya Polisi", slots: [5], ready: false },
   { key: "mwenyekiti", title: "🪑 Ofisi ya Mwenyekiti", slots: [7], ready: false },
   { key: "ulinzi", title: "💂🏾 Wajumbe na Wagambo", slots: [3, 4, 6, 8, 9], ready: false },
+  { key: "jukwaa", title: "🤖 Bot Kuu ya Jukwaa (watu wanaunganisha bot zao)", slots: [], ready: true },
 ];
 
 export function isOfficeKey(v: string): v is OfficeKey {
