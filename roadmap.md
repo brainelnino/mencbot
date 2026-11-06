@@ -16,4 +16,6 @@
 - [x] Owner controls for vote buttons on text and media, persisted and enforced on broadcasts and callbacks; 16 automated tests passed, owner PIN flow saved and reloaded the setting successfully.
 - [ ] Mbunge, Polisi, Mwenyekiti, Mjumbe/Mgambo office tools (next phases)
 - [x] Fix unrecognized Raisi commands and replace command-only interaction with Telegram buttons, guided input, and previews; automated workflow tests pass.
+- [x] Platform master bot (jukwaa) + community bots phase 1 built; tests pass.
 - [ ] Verify new menu inside the real Raisi Telegram bot after publishing; external Telegram account interaction unavailable here.
+- [ ] Owner sets master bot TOKEN and tests connecting a community bot in real Telegram.
