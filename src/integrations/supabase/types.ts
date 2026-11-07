@@ -875,6 +875,7 @@ export type Database = {
       }
       tenant_bots: {
         Row: {
+          blocked_words: string[]
           bot_token: string
           bot_username: string
           content_policy: Json
@@ -884,10 +885,12 @@ export type Database = {
           last_error: string | null
           owner_tg_user_id: number
           updated_at: string
+          vote_policy: Json
           webhook_secret: string
           welcome_message: string
         }
         Insert: {
+          blocked_words?: string[]
           bot_token: string
           bot_username: string
           content_policy?: Json
@@ -897,10 +900,12 @@ export type Database = {
           last_error?: string | null
           owner_tg_user_id: number
           updated_at?: string
+          vote_policy?: Json
           webhook_secret: string
           welcome_message?: string
         }
         Update: {
+          blocked_words?: string[]
           bot_token?: string
           bot_username?: string
           content_policy?: Json
@@ -910,10 +915,53 @@ export type Database = {
           last_error?: string | null
           owner_tg_user_id?: number
           updated_at?: string
+          vote_policy?: Json
           webhook_secret?: string
           welcome_message?: string
         }
         Relationships: []
+      }
+      tenant_deliveries: {
+        Row: {
+          claimed_at: string | null
+          id: string
+          member_id: string
+          message_id: string
+          state: string
+          tg_message_id: number | null
+        }
+        Insert: {
+          claimed_at?: string | null
+          id?: string
+          member_id: string
+          message_id: string
+          state?: string
+          tg_message_id?: number | null
+        }
+        Update: {
+          claimed_at?: string | null
+          id?: string
+          member_id?: string
+          message_id?: string
+          state?: string
+          tg_message_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_deliveries_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_deliveries_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tenant_members: {
         Row: {
@@ -946,6 +994,106 @@ export type Database = {
             columns: ["bot_id"]
             isOneToOne: false
             referencedRelation: "tenant_bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_messages: {
+        Row: {
+          body: string | null
+          bot_id: string
+          created_at: string
+          id: string
+          media: string | null
+          metadata_notice: string | null
+          reply_id: string | null
+          sender_id: string
+          sender_label: string
+          source_chat_id: number
+          source_message_id: number
+          update_id: number
+        }
+        Insert: {
+          body?: string | null
+          bot_id: string
+          created_at?: string
+          id?: string
+          media?: string | null
+          metadata_notice?: string | null
+          reply_id?: string | null
+          sender_id: string
+          sender_label: string
+          source_chat_id: number
+          source_message_id: number
+          update_id: number
+        }
+        Update: {
+          body?: string | null
+          bot_id?: string
+          created_at?: string
+          id?: string
+          media?: string | null
+          metadata_notice?: string | null
+          reply_id?: string | null
+          sender_id?: string
+          sender_label?: string
+          source_chat_id?: number
+          source_message_id?: number
+          update_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_messages_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_bots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_messages_reply_id_fkey"
+            columns: ["reply_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_reactions: {
+        Row: {
+          emoji: string
+          member_id: string
+          message_id: string
+        }
+        Insert: {
+          emoji: string
+          member_id: string
+          message_id: string
+        }
+        Update: {
+          emoji?: string
+          member_id?: string
+          message_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_reactions_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_messages"
             referencedColumns: ["id"]
           },
         ]
@@ -1059,10 +1207,24 @@ export type Database = {
           sender_label: string
         }[]
       }
+      claim_tenant_deliveries: { Args: { _message: string }; Returns: Json }
       current_admin_id: { Args: never; Returns: string }
       enqueue_private_message: {
         Args: { _message_id: string }
         Returns: undefined
+      }
+      enqueue_tenant_message: {
+        Args: {
+          _body: string
+          _bot_id: string
+          _media?: string
+          _metadata?: string
+          _reply?: number
+          _source_message: number
+          _update: number
+          _user: number
+        }
+        Returns: string
       }
       get_brand_name: { Args: never; Returns: string }
       get_dashboard_stats: { Args: never; Returns: Json }
@@ -1117,6 +1279,17 @@ export type Database = {
         Args: { _actor_tg: number; _slot: number }
         Returns: boolean
       }
+      react_tenant_message: {
+        Args: {
+          _bot_id: string
+          _emoji: string
+          _message: number
+          _toggle: boolean
+          _update: number
+          _user: number
+        }
+        Returns: string
+      }
       record_telegram_reaction: {
         Args: {
           _emoji: string
@@ -1159,6 +1332,15 @@ export type Database = {
           _tg_user_id: number
         }
         Returns: boolean
+      }
+      tenant_owner_action: {
+        Args: {
+          _action: string
+          _actor: number
+          _bot_id: string
+          _value?: string
+        }
+        Returns: Json
       }
       write_audit: {
         Args: {
