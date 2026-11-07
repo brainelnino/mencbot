@@ -9,7 +9,7 @@ export const WELCOME_MAX = 1000;
 
 export const TENANT_TOGGLES: { key: keyof ContentPolicy; label: string }[] = [
   { key: "photo", label: "Picha" }, { key: "video", label: "Video" }, { key: "document", label: "Faili" },
-  { key: "voice", label: "Sauti" }, { key: "sticker", label: "Stika" }, { key: "links", label: "Link" }, { key: "phones", label: "Namba za simu" },
+  { key: "voice", label: "Sauti" }, { key: "audio", label: "Muziki" }, { key: "animation", label: "GIF" }, { key: "sticker", label: "Stika" }, { key: "links", label: "Link" }, { key: "phones", label: "Namba za simu" },
 ];
 
 export function isToken(text: string) { return TOKEN_RE.test(text.trim()); }
