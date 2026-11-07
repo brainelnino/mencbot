@@ -12,7 +12,7 @@ async function messageContent(id: string) {
   const {data,error} = await db.from('tenant_messages').select('*').eq('id',id).single();
   if (error) throw error;
   const reply = data.reply_id ? await db.from('tenant_messages').select('sender_label,body').eq('id',data.reply_id).single() : null;
-  return {...data,reply_label:reply?.data?.sender_label,reply_body:reply?.data?.body};
+  return {...data,reply_label:reply?.data?.sender_label ?? null,reply_body:reply?.data?.body ?? null};
 }
 async function syncReactions(bot: CommunityBot, id: string) {
   const db = await admin(); const row = await messageContent(id);
@@ -52,7 +52,8 @@ export async function handleCommunityUpdate(bot: CommunityBot, update: TgUpdate)
   const db = await admin(); const c = classifyUpdate(update);
   const send = (chat_id:number,text:string) => botCall(bot.bot_token,'sendMessage',{chat_id,text,parse_mode:'HTML'});
   if(c.kind === 'vote' || c.kind === 'reaction') {
-    const {data,error} = await db.rpc('react_tenant_message',{_bot_id:bot.id,_user:c.userId,_message:c.messageId,_emoji:c.emoji ?? undefined,_toggle:c.kind === 'vote',_update:update.update_id}); if(error) throw error;
+    // PostgreSQL accepts null here for removal; generated RPC types omit SQL nullability.
+    const {data,error} = await db.rpc('react_tenant_message',{_bot_id:bot.id,_user:c.userId,_message:c.messageId,_emoji:c.emoji as string,_toggle:c.kind === 'vote',_update:update.update_id}); if(error) throw error;
     if(c.kind === 'vote') await botCall(bot.bot_token,'answerCallbackQuery',{callback_query_id:c.callbackId,...(!data ? {text:'Kura hazipatikani kwenye ujumbe huu.'} : {})});
     if(data) await syncReactions(bot,data); return;
   }
@@ -71,6 +72,6 @@ export async function handleCommunityUpdate(bot: CommunityBot, update: TgUpdate)
   const reject = contentRejection(parsePolicy(bot.content_policy),false,media,hasLink(c.text),hasPhone(c.text));
   if(reject || findBlockedTerm(c.text,bot.blocked_words ?? [])) { await send(c.chatId,'⚠️ Ujumbe haujatumwa kwa sababu una maudhui yasiyoruhusiwa hapa.'); return; }
   const metadata = media === 'photo' || media === 'document' ? await inspectImageMetadata(bot.bot_token,update) : null;
-  const {data:id,error} = await db.rpc('enqueue_tenant_message',{_bot_id:bot.id,_user:c.userId,_update:update.update_id,_source_message:c.messageId,_body:c.text,_media:media ?? undefined,_reply:c.replyMessageId ?? undefined,_metadata:metadata ?? undefined});
+  const {data:id,error} = await db.rpc('enqueue_tenant_message',{_bot_id:bot.id,_user:c.userId,_update:update.update_id,_source_message:c.messageId,_body:c.text,...(media ? {_media:media} : {}),...(c.replyMessageId ? {_reply:c.replyMessageId} : {}),...(metadata ? {_metadata:metadata} : {})});
   if(error) throw error; if(id) await deliver(bot,id);
 }
