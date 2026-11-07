@@ -8,7 +8,7 @@ describe.skipIf(!url || !key)('tenant interaction database rules',() => {
     const db=createClient(url,key,{auth:{persistSession:false},global:{fetch:(input,init) => {const headers=new Headers(init?.headers); headers.set('apikey',key); if(key.startsWith('sb_')) headers.delete('Authorization'); return fetch(input,{...init,headers});}}});
     const owner=-810001; const recipient=-810002; const outsider=-810003;
     const id=crypto.randomUUID(); const other=crypto.randomUUID();
-    const must=<T,>(r:{data:T;error:unknown}) => {if(r.error) throw new Error('Database fixture operation failed'); return r.data;};
+    const must=<T,>(r:{data:T;error:unknown}) => {if(r.error) throw new Error('Database fixture operation failed'); return r.data as NonNullable<T>;};
     try {
       must(await db.from('tenant_bots').insert([{id,owner_tg_user_id:owner,bot_token:`test-${id}`,bot_username:'test_fixture',webhook_secret:'test-only'},{id:other,owner_tg_user_id:outsider,bot_token:`test-${other}`,bot_username:'test_fixture_other',webhook_secret:'test-only'}]));
       for(const user of [owner,recipient]) must(await db.rpc('register_tenant_member',{_bot_id:id,_tg_user_id:user}));
@@ -33,7 +33,7 @@ describe.skipIf(!url || !key)('tenant interaction database rules',() => {
       expect(must(await db.from('tenant_reactions').select('emoji').eq('message_id',parent))).toHaveLength(0);
       expect((await db.rpc('tenant_owner_action',{_bot_id:id,_actor:outsider,_action:'words',_value:'bad'})).error).toBeTruthy();
       must(await db.rpc('tenant_owner_action',{_bot_id:id,_actor:owner,_action:'words',_value:'bad,spam'}));
-      expect(must(await db.from('tenant_bots').select('blocked_words').eq('id',id).single()).blocked_words).toEqual(['bad','spam']);
+      expect(must(await db.from('tenant_bots').select('blocked_words').eq('id',id).single()).blocked_words.sort()).toEqual(['bad','spam']);
       const member=must(await db.from('tenant_members').select('label').eq('bot_id',id).eq('tg_user_id',recipient).single());
       must(await db.rpc('tenant_owner_action',{_bot_id:id,_actor:owner,_action:'ban',_value:member.label}));
       expect((await db.rpc('enqueue_tenant_message',{_bot_id:id,_user:recipient,_update:5,_source_message:100,_body:'Blocked'})).error).toBeTruthy();
