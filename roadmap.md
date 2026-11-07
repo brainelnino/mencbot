@@ -19,3 +19,5 @@
 - [x] Platform master bot (jukwaa) + community bots phase 1 built; tests pass.
 - [ ] Verify new menu inside the real Raisi Telegram bot after publishing; external Telegram account interaction unavailable here.
 - [ ] Owner sets master bot TOKEN and tests connecting a community bot in real Telegram.
+- [ ] Community bots: scoped replies, anonymous reactions, creator Admin identity and Telegram-only moderation controls.
+- [ ] Image metadata: evidence-only provenance/date caption in spoiler, without private metadata.

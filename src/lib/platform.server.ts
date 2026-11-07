@@ -1,17 +1,22 @@
 // Server-only: platform (master) bot that lets anyone connect their own community bot, and the community bots themselves.
 // Owners manage everything inside Telegram; each owner only ever sees their own bot.
 import { botCall } from "./office.server";
-import { classifyUpdate, hasLink, hasPhone, type TgUpdate } from "./telegram-parse";
-import { contentRejection, parsePolicy, type ContentPolicy } from "./content-policy";
-import { buildMessageHtml, escapeHtml } from "./telegram-format";
+import { type TgUpdate } from "./telegram-parse";
+import { parsePolicy, type ContentPolicy } from "./content-policy";
+import { escapeHtml } from "./telegram-format";
+import { handleCommunityUpdate, type CommunityBot } from './tenant-chat.server';
+import { parseVotePolicy } from './vote-policy';
 import { MAX_BOTS_PER_OWNER, PROMPT_TOKEN, PROMPT_WELCOME, TENANT_TOGGLES, WELCOME_MAX, isToken, togglePolicy } from "./platform-parse";
 
 async function admin() { return (await import("@/integrations/supabase/client.server")).supabaseAdmin; }
 
-type Msg = { message_id?: number; chat: { id: number; type: string }; from?: { id: number }; text?: string; reply_to_message?: { text?: string } };
+type Msg = { message_id?: number; chat: { id: number; type: string }; from?: { id: number }; text?: string; reply_to_message?: { text?: string; from?: {id:number} } };
 export type PlatformUpdate = { update_id: number; message?: Msg; callback_query?: { id: string; from: { id: number }; data?: string; message?: Msg } };
 
-type TenantRow = { id: string; bot_username: string; bot_token: string; welcome_message: string; content_policy: unknown; is_active: boolean };
+type TenantRow = CommunityBot & { bot_username: string };
+const PROMPT_WORDS = '🧹 Tuma maneno ya kuzuia, yatenganishe kwa koma';
+const PROMPT_BAN = '🚫 Tuma utambulisho wa mwanachama wa kuzuia';
+const PROMPT_RESTORE = '✅ Tuma utambulisho wa mwanachama wa kurudisha';
 
 function tenantUrl(origin: string, id: string) {
   const u = new URL(origin);
@@ -26,19 +31,24 @@ const homeKb = (has: boolean) => ({ inline_keyboard: has
 
 function manageKb(t: TenantRow) {
   const p = parsePolicy(t.content_policy);
+  const votes = parseVotePolicy(t.vote_policy);
   const toggles = TENANT_TOGGLES.map((x) => ({ text: `${p[x.key] ? "✅" : "🚫"} ${x.label}`, callback_data: `p:pol:${x.key}` }));
   const rows: { text: string; callback_data: string }[][] = [];
   for (let i = 0; i < toggles.length; i += 2) rows.push(toggles.slice(i, i + 2));
   return { inline_keyboard: [
     [{ text: "✏️ Ujumbe wa karibu", callback_data: "p:welcome" }],
     ...rows,
+    [{text:'🧹 Maneno yaliyokatazwa',callback_data:'p:words'},{text:'👥 Wanachama',callback_data:'p:members'}],
+    [{text:'🚫 Zuia mwanachama',callback_data:'p:ban'},{text:'✅ Rudisha mwanachama',callback_data:'p:restore'}],
+    [{text:`${votes.text ? '✅' : '🚫'} Kura: maandishi`,callback_data:'p:votes_text'},{text:`${votes.media ? '✅' : '🚫'} Kura: picha`,callback_data:'p:votes_media'}],
     [{ text: t.is_active ? "⏸ Zima bot" : "▶️ Washa bot", callback_data: "p:toggle" }, { text: "🔄 Badili TOKEN", callback_data: "p:conn" }],
     [{ text: "🗑 Ondoa bot", callback_data: "p:del" }, { text: "🏠 Mwanzo", callback_data: "p:home" }],
   ] };
 }
 
 async function myBot(owner: number) {
-  const { data } = await (await admin()).from("tenant_bots").select("id,bot_username,bot_token,welcome_message,content_policy,is_active").eq("owner_tg_user_id", owner).maybeSingle();
+  const { data, error } = await (await admin()).from("tenant_bots").select("id,bot_username,bot_token,welcome_message,content_policy,is_active,owner_tg_user_id,blocked_words,vote_policy").eq("owner_tg_user_id", owner).maybeSingle();
+  if (error) throw error;
   return data as TenantRow | null;
 }
 
@@ -55,9 +65,10 @@ export async function handlePlatformUpdate(token: string, update: PlatformUpdate
   if (cb) {
     const chat = cb.message?.chat.id; const user = cb.from.id; const data = cb.data ?? "";
     await botCall(token, "answerCallbackQuery", { callback_query_id: cb.id }).catch(() => undefined);
-    if (!chat || cb.message?.chat.type !== "private") return;
+    if (!chat || cb.message?.chat.type !== "private" || !cb.message.message_id) return;
+    const messageId = cb.message.message_id;
     const bot = await myBot(user);
-    const edit = (text: string, reply_markup: unknown) => botCall(token, "editMessageText", { chat_id: chat, message_id: cb.message!.message_id, text, parse_mode: "HTML", reply_markup }).catch(() => send(chat, text, { reply_markup }));
+    const edit = (text: string, reply_markup: unknown) => botCall(token, "editMessageText", { chat_id: chat, message_id: messageId, text, parse_mode: "HTML", reply_markup }).catch(() => send(chat, text, { reply_markup }));
     if (data === "p:conn") {
       if (!bot && (await countOwned(user)) >= MAX_BOTS_PER_OWNER) return;
       await send(chat, `${PROMPT_TOKEN}\n\n1. Fungua @BotFather → /newbot\n2. Nakili TOKEN\n3. Ibandike hapa kama jibu`, { reply_markup: { force_reply: true, input_field_placeholder: "123456:ABC..." } });
@@ -68,6 +79,19 @@ export async function handlePlatformUpdate(token: string, update: PlatformUpdate
     if (!bot) { await edit("Bado huna bot. Bofya ➕ kuunganisha.", homeKb(false)); return; }
     if (data === "p:my") { await edit(await manageText(bot), manageKb(bot)); return; }
     if (data === "p:welcome") { await send(chat, PROMPT_WELCOME, { reply_markup: { force_reply: true } }); return; }
+    if (data === 'p:words' || data === 'p:ban' || data === 'p:restore') {
+      const prompt = data === 'p:words' ? `${PROMPT_WORDS}\n\nSasa: ${escapeHtml((bot.blocked_words ?? []).join(', ') || 'Hakuna')}\nTuma - kufuta yote.` : data === 'p:ban' ? PROMPT_BAN : PROMPT_RESTORE;
+      await send(chat,prompt,{reply_markup:{force_reply:true}}); return;
+    }
+    if (data === 'p:members' || data === 'p:votes_text' || data === 'p:votes_media') {
+      const {data:state,error} = await db.rpc('tenant_owner_action',{_bot_id:bot.id,_actor:user,_action:data === 'p:members' ? 'read' : data.slice(2)});
+      if(error) throw error;
+      if(data === 'p:members') {
+        const members = (state as {members:Array<{label:string;status:string}>}).members;
+        await send(chat,`👥 Wanachama\n${members.slice(0,150).map(m => `${escapeHtml(m.label)} · ${m.status === 'active' ? '✅' : '🚫'}`).join('\n') || 'Hakuna'}`);
+      }
+      const fresh = await myBot(user); if(fresh) await edit(await manageText(fresh),manageKb(fresh)); return;
+    }
     if (data.startsWith("p:pol:")) {
       const key = data.slice(6) as keyof ContentPolicy;
       if (!TENANT_TOGGLES.some((x) => x.key === key)) return;
@@ -100,13 +124,21 @@ export async function handlePlatformUpdate(token: string, update: PlatformUpdate
   const text = (m.text ?? "").trim();
   const user = m.from.id;
   const prompt = m.reply_to_message?.text ?? "";
+  const ownPrompt = m.reply_to_message?.from?.id === Number(token.split(':')[0]);
+  if (ownPrompt && [PROMPT_WORDS,PROMPT_BAN,PROMPT_RESTORE].some(p => prompt.startsWith(p))) {
+    const bot = await myBot(user); if(!bot) return;
+    const action = prompt.startsWith(PROMPT_WORDS) ? 'words' : prompt.startsWith(PROMPT_BAN) ? 'ban' : 'restore';
+    const {error} = await db.rpc('tenant_owner_action',{_bot_id:bot.id,_actor:user,_action:action,_value:action === 'words' && text === '-' ? '' : text});
+    if(error) { await send(m.chat.id,'❌ Haijahifadhiwa. Hakikisha utambulisho au maneno ni sahihi.'); return; }
+    const fresh = await myBot(user); if(fresh) await send(m.chat.id,'✅ Mabadiliko yamehifadhiwa.\n\n'+await manageText(fresh),{reply_markup:manageKb(fresh)}); return;
+  }
 
   if (isToken(text)) {
     if (m.message_id) await botCall(token, "deleteMessage", { chat_id: m.chat.id, message_id: m.message_id }).catch(() => undefined);
     await connectBot(token, m.chat.id, user, text.trim(), origin);
     return;
   }
-  if (prompt.startsWith(PROMPT_WELCOME)) {
+  if (ownPrompt && prompt.startsWith(PROMPT_WELCOME)) {
     const bot = await myBot(user);
     if (!bot) return;
     if (!text) { await send(m.chat.id, "Tuma maandishi tu."); return; }
@@ -151,53 +183,23 @@ async function connectBot(token: string, chat: number, user: number, newToken: s
     if (error) throw error;
     id = data.id;
   }
+  if (!id) throw new Error('Bot was not saved');
   try {
-    await botCall(newToken, "setWebhook", { url: tenantUrl(origin, id!), secret_token: secret, allowed_updates: ["message"], drop_pending_updates: true });
+    await botCall(newToken, "setWebhook", { url: tenantUrl(origin, id), secret_token: secret, allowed_updates: ["message", "callback_query", "message_reaction"], drop_pending_updates: true });
     await botCall(newToken, "setMyCommands", { commands: [{ command: "start", description: "Jiunge na upate namba yako" }] }).catch(() => undefined);
   } catch (e) {
-    await db.from("tenant_bots").update({ is_active: false, last_error: e instanceof Error ? e.message.slice(0, 300) : "error" }).eq("id", id!);
+    await db.from("tenant_bots").update({ is_active: false, last_error: e instanceof Error ? e.message.slice(0, 300) : "error" }).eq("id", id);
     await send("❌ Imeshindikana kuwasha bot. Jaribu tena baadaye.");
     return;
   }
   if (existing && existing.bot_token !== newToken) await botCall(existing.bot_token, "deleteWebhook").catch(() => undefined);
   const bot = await myBot(user);
-  await send(`🎉 @${escapeHtml(me.username)} sasa iko hai!\nShiriki link: https://t.me/${me.username}\n\n` + await manageText(bot!), { reply_markup: manageKb(bot!) });
+  if (!bot) throw new Error('Bot not found after connection');
+  const {error:registerError} = await db.rpc('register_tenant_member',{_bot_id:bot.id,_tg_user_id:user}); if(registerError) throw registerError;
+  await send(`🎉 @${escapeHtml(me.username)} sasa iko hai!\nShiriki link: https://t.me/${me.username}\n\n` + await manageText(bot), { reply_markup: manageKb(bot) });
 }
 
 /** Handles one community bot: /start allocates a per-bot ID, messages are broadcast anonymously to all its members. */
 export async function handleTenantUpdate(bot: TenantRow, update: TgUpdate) {
-  const db = await admin();
-  const { error: dup } = await db.from("tenant_updates").insert({ bot_id: bot.id, update_id: update.update_id });
-  if (dup) { if (dup.code === "23505") return; throw dup; }
-  const call = <T,>(method: string, body: Record<string, unknown>) => botCall<T>(bot.bot_token, method, body);
-  const c = classifyUpdate(update);
-  if (c.kind === "start") {
-    const { data, error } = await db.rpc("register_tenant_member", { _bot_id: bot.id, _tg_user_id: c.userId });
-    if (error) throw error;
-    const row = data?.[0];
-    await call("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: `${escapeHtml(bot.welcome_message)}\n\nNamba yako: <b>${escapeHtml(row?.label ?? "")}</b>` });
-    return;
-  }
-  if (c.kind !== "private_text" && c.kind !== "private_media") {
-    if (c.kind === "private_other") await call("sendMessage", { chat_id: c.chatId, text: "Aina hii ya ujumbe haitumiki." });
-    return;
-  }
-  const { data: mem } = await db.from("tenant_members").select("id,label,status").eq("bot_id", bot.id).eq("tg_user_id", c.userId).maybeSingle();
-  if (!mem) { await call("sendMessage", { chat_id: c.chatId, text: "Tuma /start kwanza ili kujiunga." }); return; }
-  if (mem.status !== "active") return;
-  const media = c.kind === "private_media" ? c.media : null;
-  const rejection = contentRejection(parsePolicy(bot.content_policy), false, media, hasLink(c.text), hasPhone(c.text));
-  if (rejection) {
-    await call("sendMessage", { chat_id: c.chatId, text: rejection === "media" ? "⚠️ Aina hii ya faili/picha hairuhusiwi hapa." : "⚠️ Link na namba za simu haziruhusiwi hapa." });
-    return;
-  }
-  const { data: rows, error } = await db.from("tenant_members").select("tg_user_id").eq("bot_id", bot.id).eq("status", "active").neq("id", mem.id);
-  if (error) throw error;
-  const content = { sender_label: mem.label, body: c.text || null };
-  for (let i = 0; i < (rows ?? []).length; i += 25) {
-    await Promise.all(rows!.slice(i, i + 25).map((r) => (media
-      ? call("copyMessage", { chat_id: r.tg_user_id, from_chat_id: c.chatId, message_id: c.messageId, ...(media === "sticker" ? {} : { parse_mode: "HTML", caption: buildMessageHtml(content, true, 900) }) })
-      : call("sendMessage", { chat_id: r.tg_user_id, parse_mode: "HTML", text: buildMessageHtml(content, true) })
-    ).catch(() => undefined)));
-  }
+  await handleCommunityUpdate(bot, update);
 }
