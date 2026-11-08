@@ -11,6 +11,15 @@ const schema = z.object({
     text: z.string().max(4096).optional(),
     caption: z.string().max(1024).optional(),
   }).passthrough().optional(),
+  callback_query: z.object({
+    id: z.string(), from: z.object({id:z.number().int()}).passthrough(), data:z.string().max(64).optional(),
+    message:z.object({message_id:z.number().int(),chat:z.object({id:z.number().int(),type:z.string()}).passthrough()}).passthrough().optional(),
+  }).passthrough().optional(),
+  message_reaction:z.object({
+    message_id:z.number().int(),chat:z.object({id:z.number().int(),type:z.string()}).passthrough(),
+    user:z.object({id:z.number().int()}).passthrough().optional(),
+    new_reaction:z.array(z.object({type:z.string(),emoji:z.string().max(32).optional()}).passthrough()).optional(),
+  }).passthrough().optional(),
 }).passthrough();
 
 // Community bots created through the platform bot. Each has its own random secret.
