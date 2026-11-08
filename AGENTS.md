@@ -10,6 +10,7 @@
 <!-- LOVABLE:END -->
 
 ## Architecture rules
+- Tenant chat RPCs enforce owner scope, sender identity, local replies and durable delivery/reaction retries; metadata uses bounded ExifReader with nonpersonal fields only — why: isolate communities and avoid false provenance claims.
 - All permission checks live in the database (RLS + `has_permission`/`is_owner` security-definer functions); UI hiding is cosmetic only — why: spec forbids UI-only security.
 - Public chat is read only through the `get_public_messages` RPC, never the `messages` table — why: keeps member IDs and private fields out of public responses.
 - Public identities are allocated only by `allocate_identity` (service_role only) — why: uniqueness and stable, non-recycled identities.
