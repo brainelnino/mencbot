@@ -182,7 +182,6 @@ async function countOwned(user: number) {
 }
 
 const homeText = () => "🤖 <b>Jukwaa la Live Chat</b>\n\nUnganisha bot yako ya Telegram ugeuze kuwa live chat ya siri: kila mwanachama anapata namba au herufi, ujumbe unawafikia wote papo hapo bila majina kuonekana.\n\nKwa sasa: bot 1 kwa kila mtu, bure.";
-const helpText = () => "ℹ️ <b>Jinsi inavyofanya kazi</b>\n\n1. Tengeneza bot kwa @BotFather (/newbot)\n2. Bofya ➕ Unganisha, bandika TOKEN\n3. Shiriki link ya bot yako — wanaojiunga wanapata namba (10–99, kisha A–Z)\n\nUdhibiti wote uko hapa: ujumbe wa karibu, picha, link, namba za simu, kuzima bot. Huoni data za bot za wengine, wala wao hawaoni zako.";
 
 async function connectBot(token: string, chat: number, user: number, newToken: string, origin: string) {
   const db = await admin();
