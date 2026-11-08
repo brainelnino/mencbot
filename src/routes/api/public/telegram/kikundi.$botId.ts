@@ -29,10 +29,10 @@ export const Route = createFileRoute("/api/public/telegram/kikundi/$botId")({
       POST: async ({ request, params }) => {
         if (!z.string().uuid().safeParse(params.botId).success) return new Response("Not found", { status: 404 });
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const { data: bot } = await supabaseAdmin.from("tenant_bots").select("id,bot_username,bot_token,webhook_secret,welcome_message,content_policy,is_active,owner_tg_user_id,blocked_words,vote_policy").eq("id", params.botId).maybeSingle();
+        const { data: bot } = await supabaseAdmin.from("tenant_bots").select("id,bot_username,bot_token,webhook_secret,welcome_message,content_policy,is_active,owner_tg_user_id,blocked_words,vote_policy,platform_suspended").eq("id", params.botId).maybeSingle();
         if (!bot) return new Response("Not found", { status: 404 });
         if (!safeEqual(request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "", bot.webhook_secret)) return new Response("Unauthorized", { status: 401 });
-        if (!bot.is_active) return Response.json({ ok: true, ignored: true });
+        if (!bot.is_active || bot.platform_suspended) return Response.json({ ok: true, ignored: true });
         let update: TgUpdate;
         try { update = schema.parse(await request.json()) as TgUpdate; } catch { return new Response("Bad request", { status: 400 }); }
         const { handleTenantUpdate } = await import("@/lib/platform.server");
