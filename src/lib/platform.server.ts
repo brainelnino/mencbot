@@ -10,7 +10,7 @@ import { MAX_BOTS_PER_OWNER, PROMPT_TOKEN, PROMPT_WELCOME, TENANT_TOGGLES, WELCO
 
 async function admin() { return (await import("@/integrations/supabase/client.server")).supabaseAdmin; }
 
-type Msg = { message_id?: number; chat: { id: number; type: string }; from?: { id: number }; text?: string; reply_to_message?: { text?: string; from?: {id:number} } };
+type Msg = { message_id?: number; chat: { id: number; type: string }; from?: { id: number }; text?: string; caption?: string; photo?: { file_id: string }[]; reply_to_message?: { text?: string; from?: {id:number} } };
 export type PlatformUpdate = { update_id: number; message?: Msg; callback_query?: { id: string; from: { id: number }; data?: string; message?: Msg } };
 
 type TenantRow = CommunityBot & { bot_username: string };
@@ -26,8 +26,19 @@ function tenantUrl(origin: string, id: string) {
 }
 
 const homeKb = (has: boolean) => ({ inline_keyboard: has
-  ? [[{ text: "⚙️ Bot yangu", callback_data: "p:my" }], [{ text: "ℹ️ Msaada", callback_data: "p:help" }]]
-  : [[{ text: "➕ Unganisha bot yangu", callback_data: "p:conn" }], [{ text: "ℹ️ Msaada", callback_data: "p:help" }]] });
+  ? [[{ text: "⚙️ Bot yangu", callback_data: "p:my" }], ...commonRows]
+  : [[{ text: "➕ Unganisha bot yangu", callback_data: "p:conn" }], ...commonRows] });
+const commonRows = [[{ text: "📖 Muongozo", callback_data: "p:help" }, { text: "📨 Tuma ripoti", callback_data: "p:fb" }]];
+const GUIDE: Record<string, [string, string]> = {
+  what: ["🤖 Bot inanisaidiaje?", "Bot yako inageuka kuwa <b>live chat ya siri</b>. Mwanachama akituma ujumbe au picha, inawafikia wanachama wote papo hapo — bila jina, username wala namba ya simu kuonekana. Inafaa kwa vikundi vya mada maalum: chuo, biashara, mtaa, michezo n.k."],
+  ids: ["🔢 Kwa nini namba na herufi?", "Kila anayejiunga anapewa utambulisho: kwanza namba <b>10–99</b>, zikiisha herufi <b>A–Z</b>, kisha <b>100+</b>. Hii inalinda faragha ya kila mtu huku watu wakiweza kutambuana kwenye mazungumzo. Wewe muundaji unaonekana kama <b>Admin</b>. Namba ni tofauti kwa kila bot."],
+  control: ["🛠 Ninaweza kudhibiti nini?", "Kupitia ⚙️ Bot yangu unaweza:\n• Kubadili ujumbe wa karibu\n• Kuruhusu/kuzuia picha, video, faili, sauti, link, namba za simu\n• Kuweka maneno yaliyokatazwa\n• Kuzuia au kurudisha mwanachama kwa utambulisho wake\n• Kuwasha/kuzima vitufe ✅/❌ kwenye maandishi au picha\n• Kuzima bot kwa muda au kubadili TOKEN"],
+  votes: ["✅ Vitufe vya maoni", "Kwa chaguo-msingi vitufe ✅/❌ viko kwenye <b>picha pekee</b>. Ukitaka viwe kwenye maandishi pia, nenda ⚙️ Bot yangu → <b>Kura: maandishi</b>. Kura hazionyeshi nani amebofya."],
+  privacy: ["🔒 Faragha", "Huoni data za bot za wengine, wala wao hawaoni zako. Hata wewe Admin huoni majina halisi ya wanachama — unaona utambulisho wao tu."],
+};
+const guideKb = () => ({ inline_keyboard: [...Object.entries(GUIDE).map(([k, [t]]) => [{ text: t, callback_data: `p:g:${k}` }]), [{ text: "🏠 Mwanzo", callback_data: "p:home" }]] });
+const FB_KINDS = { idea: "💡 Pendekezo", problem: "⚠️ Changamoto", praise: "🌟 Pongezi" } as const;
+const PROMPT_FB = "📨 Andika ripoti yako";
 
 function manageKb(t: TenantRow) {
   const p = parsePolicy(t.content_policy);
@@ -47,14 +58,14 @@ function manageKb(t: TenantRow) {
 }
 
 async function myBot(owner: number) {
-  const { data, error } = await (await admin()).from("tenant_bots").select("id,bot_username,bot_token,welcome_message,content_policy,is_active,owner_tg_user_id,blocked_words,vote_policy").eq("owner_tg_user_id", owner).maybeSingle();
+  const { data, error } = await (await admin()).from("tenant_bots").select("id,bot_username,bot_token,welcome_message,content_policy,is_active,owner_tg_user_id,blocked_words,vote_policy,platform_suspended").eq("owner_tg_user_id", owner).maybeSingle();
   if (error) throw error;
   return data as TenantRow | null;
 }
 
 async function manageText(t: TenantRow) {
   const { count } = await (await admin()).from("tenant_members").select("id", { count: "exact", head: true }).eq("bot_id", t.id);
-  return `⚙️ <b>@${escapeHtml(t.bot_username)}</b>\nHali: ${t.is_active ? "🟢 Hai" : "⏸ Imezimwa"}\nWanachama: <b>${count ?? 0}</b>\n\nUjumbe wa karibu:\n<blockquote>${escapeHtml(t.welcome_message)}</blockquote>\n✅ = inaruhusiwa · 🚫 = imezuiwa`;
+  return `⚙️ <b>@${escapeHtml(t.bot_username)}</b>\nHali: ${(t as {platform_suspended?: boolean}).platform_suspended ? "⛔ Imesimamishwa na jukwaa" : t.is_active ? "🟢 Hai" : "⏸ Imezimwa"}\nWanachama: <b>${count ?? 0}</b>\n\nUjumbe wa karibu:\n<blockquote>${escapeHtml(t.welcome_message)}</blockquote>\n✅ = inaruhusiwa · 🚫 = imezuiwa`;
 }
 
 /** Handles the master bot: connect a bot by TOKEN, then manage it with buttons. */
@@ -74,7 +85,10 @@ export async function handlePlatformUpdate(token: string, update: PlatformUpdate
       await send(chat, `${PROMPT_TOKEN}\n\n1. Fungua @BotFather → /newbot\n2. Nakili TOKEN\n3. Ibandike hapa kama jibu`, { reply_markup: { force_reply: true, input_field_placeholder: "123456:ABC..." } });
       return;
     }
-    if (data === "p:help") { await edit(helpText(), homeKb(!!bot)); return; }
+    if (data === "p:help") { await edit("📖 <b>Muongozo</b>\n\nChagua swali:", guideKb()); return; }
+    if (data.startsWith("p:g:")) { const g = GUIDE[data.slice(4)]; if (g) await edit(`<b>${g[0]}</b>\n\n${g[1]}`, { inline_keyboard: [[{ text: "↩️ Maswali mengine", callback_data: "p:help" }]] }); return; }
+    if (data === "p:fb") { await edit("📨 <b>Tuma ripoti kwetu</b>\n\nChagua aina:", { inline_keyboard: [Object.entries(FB_KINDS).map(([k, t]) => ({ text: t, callback_data: `p:fb:${k}` })), [{ text: "🏠 Mwanzo", callback_data: "p:home" }]] }); return; }
+    if (data.startsWith("p:fb:")) { const k = data.slice(5) as keyof typeof FB_KINDS; if (FB_KINDS[k]) await send(chat, `${PROMPT_FB} · ${FB_KINDS[k]}\n\nJibu ujumbe huu kwa maandishi, au picha yenye maelezo.`, { reply_markup: { force_reply: true } }); return; }
     if (data === "p:home") { await edit(homeText(), homeKb(!!bot)); return; }
     if (!bot) { await edit("Bado huna bot. Bofya ➕ kuunganisha.", homeKb(false)); return; }
     if (data === "p:my") { await edit(await manageText(bot), manageKb(bot)); return; }
@@ -133,6 +147,16 @@ export async function handlePlatformUpdate(token: string, update: PlatformUpdate
     const fresh = await myBot(user); if(fresh) await send(m.chat.id,'✅ Mabadiliko yamehifadhiwa.\n\n'+await manageText(fresh),{reply_markup:manageKb(fresh)}); return;
   }
 
+  if (ownPrompt && prompt.startsWith(PROMPT_FB)) {
+    const kind = (Object.entries(FB_KINDS).find(([, t]) => prompt.includes(t))?.[0] ?? "idea") as keyof typeof FB_KINDS;
+    const body = (m.caption ?? text).trim().slice(0, 3000);
+    const photo = m.photo?.at(-1)?.file_id ?? null;
+    if (!body && !photo) { await send(m.chat.id, "Tuma maandishi au picha."); return; }
+    const bot = await myBot(user);
+    await db.from("platform_feedback").insert({ tg_user_id: user, bot_id: bot?.id ?? null, kind, body: body || null, photo_file_id: photo });
+    await send(m.chat.id, "🙏 Asante! Ripoti yako imetufikia. Tutaipitia na kufanya maboresho.", { reply_markup: homeKb(!!bot) });
+    return;
+  }
   if (isToken(text)) {
     if (m.message_id) await botCall(token, "deleteMessage", { chat_id: m.chat.id, message_id: m.message_id }).catch(() => undefined);
     await connectBot(token, m.chat.id, user, text.trim(), origin);
@@ -158,7 +182,6 @@ async function countOwned(user: number) {
 }
 
 const homeText = () => "🤖 <b>Jukwaa la Live Chat</b>\n\nUnganisha bot yako ya Telegram ugeuze kuwa live chat ya siri: kila mwanachama anapata namba au herufi, ujumbe unawafikia wote papo hapo bila majina kuonekana.\n\nKwa sasa: bot 1 kwa kila mtu, bure.";
-const helpText = () => "ℹ️ <b>Jinsi inavyofanya kazi</b>\n\n1. Tengeneza bot kwa @BotFather (/newbot)\n2. Bofya ➕ Unganisha, bandika TOKEN\n3. Shiriki link ya bot yako — wanaojiunga wanapata namba (10–99, kisha A–Z)\n\nUdhibiti wote uko hapa: ujumbe wa karibu, picha, link, namba za simu, kuzima bot. Huoni data za bot za wengine, wala wao hawaoni zako.";
 
 async function connectBot(token: string, chat: number, user: number, newToken: string, origin: string) {
   const db = await admin();
@@ -172,6 +195,7 @@ async function connectBot(token: string, chat: number, user: number, newToken: s
   const { data: office } = await db.from("office_bots").select("office").eq("bot_username", me.username);
   if (office?.length) { await send("❌ Bot hii inatumika kwenye mfumo mwingine."); return; }
   const existing = await myBot(user);
+  if (!existing) { const { platformPolicy } = await import("./tenant-chat.server"); if (!(await platformPolicy()).new_bots) { await send("⏸ Usajili wa bot mpya umesimamishwa kwa muda. Jaribu baadaye."); return; } }
   if (!existing && (await countOwned(user)) >= MAX_BOTS_PER_OWNER) { await send("Kwa sasa unaweza kuwa na bot 1 tu."); return; }
   const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
   let id = existing?.id;

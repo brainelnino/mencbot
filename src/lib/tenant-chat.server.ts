@@ -3,6 +3,13 @@ import { classifyUpdate, findBlockedTerm, hasLink, hasPhone, type TgUpdate } fro
 import { contentRejection, parsePolicy } from './content-policy';
 import { tenantMessageHtml, tenantKeyboard } from './tenant-format';
 import { inspectImageMetadata } from './image-metadata.server';
+import { PLATFORM_POLICY_KEY, effectiveContent, effectiveVotes, parsePlatformPolicy } from './platform-policy';
+import { parseVotePolicy } from './vote-policy';
+
+export async function platformPolicy() {
+  const {data} = await (await admin()).from('system_settings').select('value').eq('key',PLATFORM_POLICY_KEY).maybeSingle();
+  return parsePlatformPolicy(data?.value);
+}
 
 export type CommunityBot = { id: string; bot_token: string; welcome_message: string; content_policy: unknown; is_active: boolean; vote_policy?: unknown; blocked_words?: string[]; owner_tg_user_id: number };
 async function admin() { return (await import('@/integrations/supabase/client.server')).supabaseAdmin; }
@@ -23,7 +30,7 @@ async function syncReactions(bot: CommunityBot, id: string) {
   const {data:fresh} = await db.from('tenant_bots').select('vote_policy').eq('id',bot.id).single();
   for(const delivery of deliveries ?? []) {
     const chat = delivery.tenant_members?.tg_user_id; if(!chat || !delivery.tg_message_id) continue;
-    const base = {chat_id:chat,message_id:delivery.tg_message_id,reply_markup:tenantKeyboard(fresh?.vote_policy,row.media,counts)};
+    const base = {chat_id:chat,message_id:delivery.tg_message_id,reply_markup:tenantKeyboard(effectiveVotes(parseVotePolicy(fresh?.vote_policy),await platformPolicy()),row.media,counts)};
     try {
       await botCall(bot.bot_token,row.media === 'sticker' ? 'editMessageReplyMarkup' : row.media ? 'editMessageCaption' : 'editMessageText', {...base,...(row.media === 'sticker' ? {} : {parse_mode:'HTML',[row.media ? 'caption' : 'text']:tenantMessageHtml(row,true,counts)})});
     } catch(e) { if(!(e instanceof Error && e.message.includes('message is not modified'))) throw e; }
@@ -50,7 +57,11 @@ async function deliver(bot: CommunityBot, id: string) {
 }
 export async function handleCommunityUpdate(bot: CommunityBot, update: TgUpdate) {
   const db = await admin(); const c = classifyUpdate(update);
+  const platform = await platformPolicy();
+  bot = {...bot, content_policy: effectiveContent(parsePolicy(bot.content_policy),platform), vote_policy: effectiveVotes(parseVotePolicy(bot.vote_policy),platform)};
+  if('userId' in c && c.userId) await db.from('tenant_members').update({last_seen_at:new Date().toISOString()}).eq('bot_id',bot.id).eq('tg_user_id',c.userId);
   const send = (chat_id:number,text:string) => botCall(bot.bot_token,'sendMessage',{chat_id,text,parse_mode:'HTML'});
+  if(c.kind === 'vote' && !platform.votes) { await botCall(bot.bot_token,'answerCallbackQuery',{callback_query_id:c.callbackId,text:'Kura zimezimwa kwa sasa.'}); return; }
   if(c.kind === 'vote' || c.kind === 'reaction') {
     // PostgreSQL accepts null here for removal; generated RPC types omit SQL nullability.
     const {data,error} = await db.rpc('react_tenant_message',{_bot_id:bot.id,_user:c.userId,_message:c.messageId,_emoji:c.emoji as string,_toggle:c.kind === 'vote',_update:update.update_id}); if(error) throw error;
@@ -59,6 +70,7 @@ export async function handleCommunityUpdate(bot: CommunityBot, update: TgUpdate)
   }
   if(c.kind === 'start') {
     const {data,error} = await db.rpc('register_tenant_member',{_bot_id:bot.id,_tg_user_id:c.userId}); if(error) throw error;
+    await db.from('tenant_members').update({last_seen_at:new Date().toISOString()}).eq('bot_id',bot.id).eq('tg_user_id',c.userId);
     const {escapeHtml} = await import('./telegram-format');
     await send(c.chatId,`${escapeHtml(bot.welcome_message)}\n\nUtambulisho wako: <b>${c.userId === bot.owner_tg_user_id ? 'Admin' : escapeHtml(data?.[0]?.label ?? '')}</b>`);
     return;

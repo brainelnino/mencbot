@@ -15,6 +15,7 @@ import { Route as IngiaRouteImport } from './routes/ingia'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminBrainRouteImport } from './routes/admin.brain'
 import { Route as AdminJamiiRouteImport } from './routes/admin.jamii'
+import { Route as AdminJukwaaRouteImport } from './routes/admin.jukwaa'
 import { Route as AdminMipangilioRouteImport } from './routes/admin.mipangilio'
 import { Route as AdminUdhibitiRouteImport } from './routes/admin.udhibiti'
 import { Route as AdminWanachamaRouteImport } from './routes/admin.wanachama'
@@ -51,6 +52,11 @@ const AdminBrainRoute = AdminBrainRouteImport.update({
 const AdminJamiiRoute = AdminJamiiRouteImport.update({
   id: '/jamii',
   path: '/jamii',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminJukwaaRoute = AdminJukwaaRouteImport.update({
+  id: '/jukwaa',
+  path: '/jukwaa',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminMipangilioRoute = AdminMipangilioRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/ingia': typeof IngiaRoute
   '/admin/brain': typeof AdminBrainRoute
   '/admin/jamii': typeof AdminJamiiRoute
+  '/admin/jukwaa': typeof AdminJukwaaRoute
   '/admin/mipangilio': typeof AdminMipangilioRoute
   '/admin/udhibiti': typeof AdminUdhibitiRoute
   '/admin/wanachama': typeof AdminWanachamaRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/ingia': typeof IngiaRoute
   '/admin/brain': typeof AdminBrainRoute
   '/admin/jamii': typeof AdminJamiiRoute
+  '/admin/jukwaa': typeof AdminJukwaaRoute
   '/admin/mipangilio': typeof AdminMipangilioRoute
   '/admin/udhibiti': typeof AdminUdhibitiRoute
   '/admin/wanachama': typeof AdminWanachamaRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/ingia': typeof IngiaRoute
   '/admin/brain': typeof AdminBrainRoute
   '/admin/jamii': typeof AdminJamiiRoute
+  '/admin/jukwaa': typeof AdminJukwaaRoute
   '/admin/mipangilio': typeof AdminMipangilioRoute
   '/admin/udhibiti': typeof AdminUdhibitiRoute
   '/admin/wanachama': typeof AdminWanachamaRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/ingia'
     | '/admin/brain'
     | '/admin/jamii'
+    | '/admin/jukwaa'
     | '/admin/mipangilio'
     | '/admin/udhibiti'
     | '/admin/wanachama'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/ingia'
     | '/admin/brain'
     | '/admin/jamii'
+    | '/admin/jukwaa'
     | '/admin/mipangilio'
     | '/admin/udhibiti'
     | '/admin/wanachama'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/ingia'
     | '/admin/brain'
     | '/admin/jamii'
+    | '/admin/jukwaa'
     | '/admin/mipangilio'
     | '/admin/udhibiti'
     | '/admin/wanachama'
@@ -237,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminJamiiRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/jukwaa': {
+      id: '/admin/jukwaa'
+      path: '/jukwaa'
+      fullPath: '/admin/jukwaa'
+      preLoaderRoute: typeof AdminJukwaaRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/mipangilio': {
       id: '/admin/mipangilio'
       path: '/mipangilio'
@@ -292,6 +311,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminBrainRoute: typeof AdminBrainRoute
   AdminJamiiRoute: typeof AdminJamiiRoute
+  AdminJukwaaRoute: typeof AdminJukwaaRoute
   AdminMipangilioRoute: typeof AdminMipangilioRoute
   AdminUdhibitiRoute: typeof AdminUdhibitiRoute
   AdminWanachamaRoute: typeof AdminWanachamaRoute
@@ -302,6 +322,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminBrainRoute: AdminBrainRoute,
   AdminJamiiRoute: AdminJamiiRoute,
+  AdminJukwaaRoute: AdminJukwaaRoute,
   AdminMipangilioRoute: AdminMipangilioRoute,
   AdminUdhibitiRoute: AdminUdhibitiRoute,
   AdminWanachamaRoute: AdminWanachamaRoute,
