@@ -652,6 +652,47 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_feedback: {
+        Row: {
+          body: string | null
+          bot_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          photo_file_id: string | null
+          status: string
+          tg_user_id: number
+        }
+        Insert: {
+          body?: string | null
+          bot_id?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          photo_file_id?: string | null
+          status?: string
+          tg_user_id: number
+        }
+        Update: {
+          body?: string | null
+          bot_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          photo_file_id?: string | null
+          status?: string
+          tg_user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_feedback_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       public_identities: {
         Row: {
           created_at: string
@@ -884,6 +925,7 @@ export type Database = {
           is_active: boolean
           last_error: string | null
           owner_tg_user_id: number
+          platform_suspended: boolean
           updated_at: string
           vote_policy: Json
           webhook_secret: string
@@ -899,6 +941,7 @@ export type Database = {
           is_active?: boolean
           last_error?: string | null
           owner_tg_user_id: number
+          platform_suspended?: boolean
           updated_at?: string
           vote_policy?: Json
           webhook_secret: string
@@ -914,6 +957,7 @@ export type Database = {
           is_active?: boolean
           last_error?: string | null
           owner_tg_user_id?: number
+          platform_suspended?: boolean
           updated_at?: string
           vote_policy?: Json
           webhook_secret?: string
@@ -969,6 +1013,7 @@ export type Database = {
           created_at: string
           id: string
           label: string
+          last_seen_at: string | null
           status: string
           tg_user_id: number
         }
@@ -977,6 +1022,7 @@ export type Database = {
           created_at?: string
           id?: string
           label: string
+          last_seen_at?: string | null
           status?: string
           tg_user_id: number
         }
@@ -985,6 +1031,7 @@ export type Database = {
           created_at?: string
           id?: string
           label?: string
+          last_seen_at?: string | null
           status?: string
           tg_user_id?: number
         }
@@ -1228,6 +1275,22 @@ export type Database = {
       }
       get_brand_name: { Args: never; Returns: string }
       get_dashboard_stats: { Args: never; Returns: Json }
+      get_platform_bots: {
+        Args: never
+        Returns: {
+          bot_username: string
+          created_at: string
+          id: string
+          is_active: boolean
+          last_error: string
+          members: number
+          messages: number
+          month: number
+          platform_suspended: boolean
+          today: number
+          week: number
+        }[]
+      }
       get_public_messages: {
         Args: { _limit?: number }
         Returns: {
@@ -1316,6 +1379,10 @@ export type Database = {
       resolve_telegram_reply: {
         Args: { _member_id: string; _telegram_message_id: number }
         Returns: string
+      }
+      set_bot_suspended: {
+        Args: { _bot: string; _suspended: boolean }
+        Returns: undefined
       }
       set_member_exempt: {
         Args: { _exempt: boolean; _member_id: string }

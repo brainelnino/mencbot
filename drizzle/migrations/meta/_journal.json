@@ -78,6 +78,13 @@
       "when": 1794048074374,
       "tag": "0010_tenant_chat_interactions",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794124874095,
+      "tag": "0011_platform_oversight",
+      "breakpoints": true
     }
   ]
 }
