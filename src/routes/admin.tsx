@@ -1,7 +1,7 @@
-import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, MessagesSquare, ShieldAlert, Users, UserCog, Brain, Settings, LogOut, Crown } from "lucide-react";
+import { Bot, createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { Bot, useEffect, useState, type FormEvent } from "react";
+import { Bot, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot, LayoutDashboard, MessagesSquare, ShieldAlert, Users, UserCog, Brain, Settings, LogOut, Crown } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -35,6 +35,7 @@ const NAV = [
   { to: "/admin/udhibiti", label: t.nav.moderation, icon: ShieldAlert },
   { to: "/admin/wanachama", label: t.nav.members, icon: Users },
   { to: "/admin/wasimamizi", label: t.nav.admins, icon: UserCog },
+  { to: "/admin/jukwaa", label: "Jukwaa", icon: Bot },
   { to: "/admin/brain", label: t.nav.brain, icon: Brain },
   { to: "/admin/mipangilio", label: t.nav.settings, icon: Settings },
 ] as const;
