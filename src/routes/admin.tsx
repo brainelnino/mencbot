@@ -1,6 +1,6 @@
-import { Bot, createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
-import { Bot, useEffect, useState, type FormEvent } from "react";
-import { Bot, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, LayoutDashboard, MessagesSquare, ShieldAlert, Users, UserCog, Brain, Settings, LogOut, Crown } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
