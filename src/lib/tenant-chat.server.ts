@@ -50,7 +50,17 @@ async function deliver(bot: CommunityBot, id: string) {
           ...(row.media ? {from_chat_id:row.source_chat_id,message_id:row.source_message_id,...(row.media === 'sticker' ? {} : {caption:tenantMessageHtml(row,!d.reply_message_id),parse_mode:'HTML'})} : {text:tenantMessageHtml(row,!d.reply_message_id),parse_mode:'HTML'}),
         });
         const {error:saveError} = await db.from('tenant_deliveries').update({state:'sent',tg_message_id:result.message_id}).eq('id',d.id); if(saveError) throw saveError;
-      } catch(e) { await db.from('tenant_deliveries').update({state:'pending'}).eq('id',d.id); throw e; }
+      } catch(e) {
+  const msg = e instanceof Error ? e.message : '';
+  const permanent = msg.includes('[403]') || msg.includes('chat not found') || msg.includes('user is deactivated');
+  if (permanent) {
+    // Mtumiaji amezuia bot au akaunti haipo: usijaribu tena, endelea na wengine
+    await db.from('tenant_deliveries').update({state:'sent'}).eq('id',d.id);
+    return;
+  }
+  await db.from('tenant_deliveries').update({state:'pending'}).eq('id',d.id);
+  throw e;
+}
     }));
     const failure = outcomes.find(o => o.status === 'rejected'); if(failure?.status === 'rejected') throw failure.reason;
   }
