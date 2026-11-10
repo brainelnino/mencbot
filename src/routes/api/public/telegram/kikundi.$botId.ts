@@ -41,7 +41,7 @@ export const Route = createFileRoute("/api/public/telegram/kikundi/$botId")({
           return Response.json({ ok: true });
         } catch (e) {
           await supabaseAdmin.from("tenant_bots").update({ last_error: e instanceof Error ? e.message.slice(0, 300) : "error" }).eq("id", bot.id);
-          return Response.json({ ok: false }, {status:500});
+          return Response.json({ ok: true, error: true });
         }
       },
     },
