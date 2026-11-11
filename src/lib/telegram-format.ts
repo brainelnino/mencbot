@@ -40,7 +40,7 @@ export function buildMessageHtml(row: { sender_label: string; body: string | nul
     : "";
   // Keep the parsed Telegram text below 4096 characters even with fallback context.
   const body = Array.from(row.body ?? "").slice(0, fallback ? max - 200 : max).join("");
-  return `${fallback}<blockquote>${escapeHtml(row.sender_label)}</blockquote>\n${escapeHtml(body)}`;
+    return `${fallback}<blockquote>${escapeHtml(row.sender_label)}</blockquote>\n${entitiesToHtml(body, row.entities ?? [])}`;
 }
 
 export function telegramMessagePayload(row: TelegramDeliveryContent) {
@@ -54,7 +54,7 @@ export function telegramMessagePayload(row: TelegramDeliveryContent) {
 }
 
 /** Text for editing an already-delivered copy: reply context is always a quote (edits cannot carry reply_parameters). */
-export function telegramStoredMessageText(row: { sender_label: string; body: string | null; reply_label?: string | null; reply_body?: string | null }) {
+export function telegramStoredMessageText(row: { sender_label: string; body: string | null; reply_label?: string | null; reply_body?: string | null; entities?: TgEntity[] | null }) {
   return buildMessageHtml(row, true);
 }
 
