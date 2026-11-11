@@ -1,3 +1,24 @@
+import type { TgEntity } from "./telegram-parse";
+
+const TAGS = { bold: "b", italic: "i", underline: "u", strikethrough: "s", spoiler: "tg-spoiler", pre: "pre", code: "code" } as const;
+const ORDER = Object.keys(TAGS) as Array<keyof typeof TAGS>;
+
+/** Hubadilisha maandishi + entities kuwa HTML salama ya Telegram. */
+export function entitiesToHtml(text: string, entities: TgEntity[] = []) {
+  const ents = entities
+    .filter((e) => ORDER.includes(e.type as keyof typeof TAGS) && e.length > 0 && e.offset < text.length)
+    .map((e) => ({ type: e.type, start: e.offset, end: Math.min(e.offset + e.length, text.length) }));
+  if (!ents.length) return escapeHtml(text);
+  const cuts = [...new Set([0, text.length, ...ents.flatMap((e) => [e.start, e.end])])].sort((a, b) => a - b);
+  let html = "";
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const a = cuts[i]!, b = cuts[i + 1]!;
+    const on = ORDER.filter((t) => ents.some((e) => e.type === t && e.start <= a && e.end >= b));
+    html += on.map((t) => `<${TAGS[t]}>`).join("") + escapeHtml(text.slice(a, b)) + [...on].reverse().map((t) => `</${TAGS[t]}>`).join("");
+  }
+  return html;
+}
+
 // Telegram HTML is escaped independently from the private delivery references.
 export function escapeHtml(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -10,9 +31,10 @@ export type TelegramDeliveryContent = {
   reply_message_id?: number | null;
   reply_label?: string | null;
   reply_body?: string | null;
+entities?: TgEntity[] | null;
 };
 
-export function buildMessageHtml(row: { sender_label: string; body: string | null; reply_label?: string | null; reply_body?: string | null }, includeFallback: boolean, max = 4000) {
+export function buildMessageHtml(row: { sender_label: string; body: string | null; reply_label?: string | null; reply_body?: string | null; entities?: TgEntity[] | null }, includeFallback: boolean, max = 4000) {
   const fallback = includeFallback && row.reply_label
     ? `<blockquote>↪ ${escapeHtml(row.reply_label)}\n${escapeHtml(Array.from(row.reply_body ?? "").slice(0, 160).join(""))}</blockquote>\n`
     : "";
