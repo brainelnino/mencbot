@@ -8,6 +8,7 @@ export type TgUpdate = {
     text?: string;
     photo?: unknown[];
     caption?: string;
+entities?: unknown[]; caption_entities?: unknown[];
     video?: unknown; document?: unknown; voice?: unknown; audio?: unknown; sticker?: unknown; animation?: unknown; video_note?: unknown;
     reply_to_message?: { message_id: number };
   };
@@ -26,10 +27,26 @@ export type TgUpdate = {
   [k: string]: unknown;
 };
 
+export type TgEntity = { type: string; offset: number; length: number };
+
+const KEEP = ["bold", "italic", "underline", "strikethrough", "spoiler", "code", "pre"];
+
+/** Huchuja formatting salama tu na kurekebisha offset baada ya trim. */
+export function normalizeEntities(list: unknown, lead = 0): TgEntity[] {
+  if (!Array.isArray(list)) return [];
+  const out: TgEntity[] = [];
+  for (const e of list.slice(0, 100)) {
+    if (!e || !KEEP.includes(e.type) || !Number.isInteger(e.offset) || !Number.isInteger(e.length)) continue;
+    let offset = e.offset - lead, length = e.length;
+    if (offset < 0) { length += offset; offset = 0; }
+    if (length > 0) out.push({ type: e.type, offset, length });
+  }
+  return out;
+}
 export type Classified =
   | { kind: "start"; userId: number; chatId: number }
-  | { kind: "private_text"; userId: number; chatId: number; text: string; messageId: number; replyMessageId: number | null }
-  | { kind: "private_media"; userId: number; chatId: number; media: MediaType; text: string; messageId: number; replyMessageId: number | null }
+  | { kind: "private_text"; userId: number; chatId: number; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
+  | { kind: "private_media"; userId: number; chatId: number; media: MediaType; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
   | { kind: "private_other"; userId: number; chatId: number }
   | { kind: "admin_command"; userId: number; chatId: number; command: "admin" | "zuia" | "rudisha"; label: string | undefined }
   | { kind: "group_link"; chatId: number; code: string; title: string | null }
@@ -66,15 +83,16 @@ export function classifyUpdate(u: TgUpdate): Classified {
   const m = u.message;
   if (!m || !m.chat) return { kind: "ignored", reason: "no_message" };
   if (m.from?.is_bot) return { kind: "ignored", reason: "from_bot" };
-  const text = (m.text ?? "").trim();
+  const raw = m.text ?? "";
+const text = raw.trim();
   if (m.chat.type === "private") {
     if (!m.from) return { kind: "ignored", reason: "no_sender" };
     if (/^\/start(@\w+)?(\s|$)/.test(text)) return { kind: "start", userId: m.from.id, chatId: m.chat.id };
     const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
-    if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
+    if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), entities: normalizeEntities(m.entities, raw.length - raw.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     const media = detectMedia(m);
-    if (media) return { kind: "private_media", userId: m.from.id, chatId: m.chat.id, media, text: (m.caption ?? "").trim().slice(0, 1000), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
+    if (media) { const cap = m.caption ?? ""; return { kind: "private_media", userId: m.from.id, chatId: m.chat.id, media, text: cap.trim().slice(0, 1000), entities: normalizeEntities(m.caption_entities, cap.length - cap.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null }; }
     return { kind: "private_other", userId: m.from.id, chatId: m.chat.id };
   }
   if (m.chat.type === "group" || m.chat.type === "supergroup") {
