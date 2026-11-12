@@ -1,5 +1,5 @@
 // Server-only Telegram service. Never import from browser code.
-import { classifyUpdate, findBlockedTerm, hasLink, hasPhone, type TgUpdate } from "./telegram-parse";
+import { classifyUpdate, findBlockedTerm, hasLink, hasPhone, normalizeEntities, type TgEntity, type TgUpdate } from "./telegram-parse";
 import { contentRejection, parsePolicy } from "./content-policy";
 import { t } from "./i18n";
 import { buildMessageHtml, telegramMessagePayload, telegramStoredMessageText, voteKeyboard, withReactionFooter } from "./telegram-format";
@@ -129,7 +129,7 @@ export async function handleUpdate(update: TgUpdate) {
         }
         const { error } = await db.from("messages").upsert({
           member_id: mem.id, sender_label: label, kind: media === "photo" ? "image" : "text", body: c.text || null,
-          reply_to_id: replyToId, telegram_chat_message_ref: { message_id: c.messageId, chat_id: c.chatId, media },
+          reply_to_id: replyToId, telegram_chat_message_ref: { message_id: c.messageId, chat_id: c.chatId, media, entities: c.entities },
           source_update_id: update.update_id, moderation_status: "pending",
           publication_status: "unpublished", processing_status: "awaiting_moderation",
         }, { onConflict: "source_update_id", ignoreDuplicates: true });
@@ -223,6 +223,7 @@ export async function publishMessage(messageId: string) {
   const { data: src, error: srcErr } = await db.from("messages").select("telegram_chat_message_ref").eq("id", messageId).single();
   if (srcErr) throw srcErr;
   const ref = mediaRef(src.telegram_chat_message_ref);
+  const entities = entitiesOf(src.telegram_chat_message_ref);
   const showButtons = votesEnabled(await votePolicy(), ref?.media);
   const markup = showButtons ? { reply_markup: voteKeyboard() } : {};
   for (let batch = 0; batch < 5; batch++) {
@@ -236,11 +237,11 @@ export async function publishMessage(messageId: string) {
         const sent = ref
           ? await tg<{ message_id: number }>("copyMessage", {
               chat_id: row.chat_id, from_chat_id: ref.chat_id, message_id: ref.message_id,
-              ...(ref.media === "sticker" ? {} : { parse_mode: "HTML", caption: buildMessageHtml(row, !row.reply_message_id, 900) }),
+              ...(ref.media === "sticker" ? {} : { parse_mode: "HTML", caption: buildMessageHtml({ ...row, entities }, !row.reply_message_id, 900) }),
               ...(row.reply_message_id ? { reply_parameters: { message_id: row.reply_message_id, allow_sending_without_reply: true } } : {}),
               ...markup,
             })
-          : await tg<{ message_id: number }>("sendMessage", { ...telegramMessagePayload(row), ...markup });
+          : await tg<{ message_id: number }>("sendMessage", { ...telegramMessagePayload({ ...row, entities }), ...markup });
         patch = { status: "sent", sent_at: new Date().toISOString(), telegram_message_id: sent.message_id, last_error: null };
       } catch (e) {
         const permanent = e instanceof TelegramError && (e.status === 403 || e.status === 400);
@@ -281,9 +282,10 @@ async function syncReactionEdits(messageId: string) {
     if (parent) reply = { reply_label: parent.sender_label, reply_body: parent.body };
   }
   const ref = mediaRef(msg.telegram_chat_message_ref);
+  const entities = entitiesOf(msg.telegram_chat_message_ref);
   const sticker = ref?.media === "sticker";
   const reply_markup = votesEnabled(await votePolicy(), ref?.media) ? voteKeyboard(summary ?? []) : { inline_keyboard: [] };
-  const text = withReactionFooter(ref ? buildMessageHtml({ sender_label: msg.sender_label, body: msg.body, ...reply }, true, 900) : telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, ...reply }), (summary ?? []).filter((r) => r.emoji !== "✅" && r.emoji !== "❌"));
+  const text = withReactionFooter(ref ? buildMessageHtml({ sender_label: msg.sender_label, body: msg.body, entities, ...reply }, true, 900) : telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, entities, ...reply }), (summary ?? []).filter((r) => r.emoji !== "✅" && r.emoji !== "❌"));
   const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
   if (delError) throw delError;
   await Promise.all((deliveries ?? []).map(async (d) => {
@@ -297,4 +299,8 @@ async function syncReactionEdits(messageId: string) {
       log("warn", "reaction_edit_failed", { error: e instanceof Error ? e.message : "error" });
     }
   }));
+}
+
+function entitiesOf(v: unknown): TgEntity[] {
+  return normalizeEntities((v as { entities?: unknown } | null)?.entities);
 }
