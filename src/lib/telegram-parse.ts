@@ -8,7 +8,8 @@ export type TgUpdate = {
     text?: string;
     photo?: unknown[];
     caption?: string;
-entities?: unknown[]; caption_entities?: unknown[];
+    entities?: unknown[];
+    caption_entities?: unknown[];
     video?: unknown; document?: unknown; voice?: unknown; audio?: unknown; sticker?: unknown; animation?: unknown; video_note?: unknown;
     reply_to_message?: { message_id: number };
   };
@@ -27,9 +28,9 @@ entities?: unknown[]; caption_entities?: unknown[];
   [k: string]: unknown;
 };
 
-export type TgEntity = { type: string; offset: number; length: number };
+export type TgEntity = { type: string; offset: number; length: number; unix_time?: number; date_time_format?: string };
 
-const KEEP = ["bold", "italic", "underline", "strikethrough", "spoiler", "code", "pre"];
+const KEEP = ["bold", "italic", "underline", "strikethrough", "spoiler", "code", "pre", "blockquote", "expandable_blockquote", "date_time"];
 
 /** Huchuja formatting salama tu na kurekebisha offset baada ya trim. */
 export function normalizeEntities(list: unknown, lead = 0): TgEntity[] {
@@ -37,12 +38,18 @@ export function normalizeEntities(list: unknown, lead = 0): TgEntity[] {
   const out: TgEntity[] = [];
   for (const e of list.slice(0, 100)) {
     if (!e || !KEEP.includes(e.type) || !Number.isInteger(e.offset) || !Number.isInteger(e.length)) continue;
+    if (e.type === "date_time" && !Number.isInteger(e.unix_time)) continue;
     let offset = e.offset - lead, length = e.length;
     if (offset < 0) { length += offset; offset = 0; }
-    if (length > 0) out.push({ type: e.type, offset, length });
+    if (length <= 0) continue;
+    const base = { type: e.type, offset, length };
+    if (e.type !== "date_time") { out.push(base); continue; }
+    const f = typeof e.date_time_format === "string" && /^(r|w?[dD]?[tT]?)$/.test(e.date_time_format) ? e.date_time_format : undefined;
+    out.push({ ...base, unix_time: e.unix_time, ...(f ? { date_time_format: f } : {}) });
   }
   return out;
 }
+
 export type Classified =
   | { kind: "start"; userId: number; chatId: number }
   | { kind: "private_text"; userId: number; chatId: number; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
@@ -84,7 +91,7 @@ export function classifyUpdate(u: TgUpdate): Classified {
   if (!m || !m.chat) return { kind: "ignored", reason: "no_message" };
   if (m.from?.is_bot) return { kind: "ignored", reason: "from_bot" };
   const raw = m.text ?? "";
-const text = raw.trim();
+  const text = raw.trim();
   if (m.chat.type === "private") {
     if (!m.from) return { kind: "ignored", reason: "no_sender" };
     if (/^\/start(@\w+)?(\s|$)/.test(text)) return { kind: "start", userId: m.from.id, chatId: m.chat.id };
@@ -92,7 +99,10 @@ const text = raw.trim();
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
     if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), entities: normalizeEntities(m.entities, raw.length - raw.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     const media = detectMedia(m);
-    if (media) { const cap = m.caption ?? ""; return { kind: "private_media", userId: m.from.id, chatId: m.chat.id, media, text: cap.trim().slice(0, 1000), entities: normalizeEntities(m.caption_entities, cap.length - cap.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null }; }
+    if (media) {
+      const cap = m.caption ?? "";
+      return { kind: "private_media", userId: m.from.id, chatId: m.chat.id, media, text: cap.trim().slice(0, 1000), entities: normalizeEntities(m.caption_entities, cap.length - cap.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
+    }
     return { kind: "private_other", userId: m.from.id, chatId: m.chat.id };
   }
   if (m.chat.type === "group" || m.chat.type === "supergroup") {
