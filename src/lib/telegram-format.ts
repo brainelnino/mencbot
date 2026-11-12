@@ -1,22 +1,39 @@
 import type { TgEntity } from "./telegram-parse";
 
 const TAGS = { bold: "b", italic: "i", underline: "u", strikethrough: "s", spoiler: "tg-spoiler", pre: "pre", code: "code" } as const;
-const ORDER = Object.keys(TAGS) as Array<keyof typeof TAGS>;
+const INLINE: string[] = [...Object.keys(TAGS), "date_time"];
 
-/** Hubadilisha maandishi + entities kuwa HTML salama ya Telegram. */
-export function entitiesToHtml(text: string, entities: TgEntity[] = []) {
-  const ents = entities
-    .filter((e) => ORDER.includes(e.type as keyof typeof TAGS) && e.length > 0 && e.offset < text.length)
-    .map((e) => ({ type: e.type, start: e.offset, end: Math.min(e.offset + e.length, text.length) }));
-  if (!ents.length) return escapeHtml(text);
-  const cuts = [...new Set([0, text.length, ...ents.flatMap((e) => [e.start, e.end])])].sort((a, b) => a - b);
+const openTag = (e: TgEntity) => e.type === "date_time"
+  ? `<tg-time unix="${Number(e.unix_time)}"${e.date_time_format ? ` format="${e.date_time_format}"` : ""}>`
+  : `<${TAGS[e.type as keyof typeof TAGS]}>`;
+const closeTag = (e: TgEntity) => e.type === "date_time" ? "</tg-time>" : `</${TAGS[e.type as keyof typeof TAGS]}>`;
+
+function renderInline(text: string, ents: TgEntity[], from: number, to: number) {
+  const part = ents.filter((e) => INLINE.includes(e.type) && e.offset < to && e.offset + e.length > from);
+  const cuts = [...new Set([from, to, ...part.flatMap((e) => [Math.max(e.offset, from), Math.min(e.offset + e.length, to)])])].sort((a, b) => a - b);
   let html = "";
   for (let i = 0; i < cuts.length - 1; i++) {
     const a = cuts[i]!, b = cuts[i + 1]!;
-    const on = ORDER.filter((t) => ents.some((e) => e.type === t && e.start <= a && e.end >= b));
-    html += on.map((t) => `<${TAGS[t]}>`).join("") + escapeHtml(text.slice(a, b)) + [...on].reverse().map((t) => `</${TAGS[t]}>`).join("");
+    const on = INLINE.map((t) => part.find((e) => e.type === t && e.offset <= a && e.offset + e.length >= b)).filter((e): e is TgEntity => !!e);
+    html += on.map(openTag).join("") + escapeHtml(text.slice(a, b)) + [...on].reverse().map(closeTag).join("");
   }
   return html;
+}
+
+/** Hubadilisha maandishi + entities kuwa HTML salama ya Telegram. */
+export function entitiesToHtml(text: string, entities: TgEntity[] = []) {
+  const quotes = entities
+    .filter((e) => (e.type === "blockquote" || e.type === "expandable_blockquote") && e.length > 0 && e.offset < text.length)
+    .map((e) => ({ expandable: e.type === "expandable_blockquote", start: e.offset, end: Math.min(e.offset + e.length, text.length) }))
+    .sort((a, b) => a.start - b.start);
+  let html = "", pos = 0;
+  for (const q of quotes) {
+    if (q.start < pos) continue;
+    html += renderInline(text, entities, pos, q.start);
+    html += `<blockquote${q.expandable ? " expandable" : ""}>${renderInline(text, entities, q.start, q.end)}</blockquote>`;
+    pos = q.end;
+  }
+  return html + renderInline(text, entities, pos, text.length);
 }
 
 // Telegram HTML is escaped independently from the private delivery references.
@@ -31,16 +48,17 @@ export type TelegramDeliveryContent = {
   reply_message_id?: number | null;
   reply_label?: string | null;
   reply_body?: string | null;
-entities?: TgEntity[] | null;
+  entities?: TgEntity[] | null;
+  notice?: string;
 };
 
-export function buildMessageHtml(row: { sender_label: string; body: string | null; reply_label?: string | null; reply_body?: string | null; entities?: TgEntity[] | null }, includeFallback: boolean, max = 4000) {
+export function buildMessageHtml(row: { sender_label: string; body: string | null; reply_label?: string | null; reply_body?: string | null; entities?: TgEntity[] | null; notice?: string }, includeFallback: boolean, max = 4000) {
   const fallback = includeFallback && row.reply_label
     ? `<blockquote>↪ ${escapeHtml(row.reply_label)}\n${escapeHtml(Array.from(row.reply_body ?? "").slice(0, 160).join(""))}</blockquote>\n`
     : "";
   // Keep the parsed Telegram text below 4096 characters even with fallback context.
   const body = Array.from(row.body ?? "").slice(0, fallback ? max - 200 : max).join("");
-    return `${fallback}<blockquote>${escapeHtml(row.sender_label)}</blockquote>\n${entitiesToHtml(body, row.entities ?? [])}`;
+  return `${row.notice ?? ""}${fallback}<blockquote>${escapeHtml(row.sender_label)}</blockquote>\n${entitiesToHtml(body, row.entities ?? [])}`;
 }
 
 export function telegramMessagePayload(row: TelegramDeliveryContent) {
@@ -54,7 +72,7 @@ export function telegramMessagePayload(row: TelegramDeliveryContent) {
 }
 
 /** Text for editing an already-delivered copy: reply context is always a quote (edits cannot carry reply_parameters). */
-export function telegramStoredMessageText(row: { sender_label: string; body: string | null; reply_label?: string | null; reply_body?: string | null; entities?: TgEntity[] | null }) {
+export function telegramStoredMessageText(row: { sender_label: string; body: string | null; reply_label?: string | null; reply_body?: string | null; entities?: TgEntity[] | null; notice?: string }) {
   return buildMessageHtml(row, true);
 }
 
