@@ -72,8 +72,8 @@ export async function handleUpdate(update: TgUpdate) {
   const c = classifyUpdate(update);
 
   // Idempotency: claim the update_id. Duplicate deliveries of processed updates are skipped.
-  // "history" is stored as "private_other" so the existing update_kind column never rejects a new value.
-  const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: c.kind === "history" ? "private_other" : c.kind });
+  // "history" and "search" are stored as "private_other" so the existing update_kind column never rejects a new value.
+  const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: c.kind === "history" || c.kind === "search" ? "private_other" : c.kind });
   if (insErr) {
     if (insErr.code !== "23505") throw insErr;
     const { data: prev } = await db.from("telegram_updates").select("status,attempts").eq("update_id", update.update_id).single();
@@ -108,6 +108,13 @@ export async function handleUpdate(update: TgUpdate) {
         if (mem.status !== "active") { status = "ignored"; break; }
         if (c.messageId) await tg("editMessageReplyMarkup", { chat_id: c.chatId, message_id: c.messageId, reply_markup: { inline_keyboard: [] } }).catch(() => {});
         await sendHistory(c.chatId, c.userId);
+        break;
+      }
+      case "search": {
+        const { data: mem } = await db.from("members").select("id,status").eq("telegram_user_id", c.userId).maybeSingle();
+        if (!mem) { await tg("sendMessage", { chat_id: c.chatId, text: "Tuma /start kwanza ili kujisajili." }); break; }
+        if (mem.status !== "active") { status = "ignored"; break; }
+        await searchMessages(c.chatId, c.userId, c.query);
         break;
       }
       case "private_text":
@@ -351,15 +358,51 @@ async function noticeFor(msg: { body: string | null; reply_to_id: string | null 
   };
 }
 
+// ---- Historia na kutafuta (muda wote ni saa za Afrika Mashariki) ----
+
 // Kinga ndogo dhidi ya kubonyeza mara nyingi (kwa kila seva, si kamili).
 const historyLast = new Map<number, number>();
+const searchLast = new Map<number, number>();
 const MEDIA_LABEL: Record<string, string> = {
   photo: "📷 Picha", video: "🎥 Video", document: "📄 Faili", voice: "🎤 Sauti",
   audio: "🎵 Sauti", sticker: "🙂 Sticker", animation: "🎞 GIF",
 };
 const timeFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Dar_es_Salaam", hour: "2-digit", minute: "2-digit", hour12: false });
+const dateTimeFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Dar_es_Salaam", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 
-/** Hutuma ujumbe wa masaa 24 yaliyopita (hadi 100) kama vipande vichache, muda wa saa za Afrika Mashariki. */
+/** Mstari mmoja wa muhtasari: muda, utambulisho, lebo ya faili na maandishi. */
+function historyLine(r: { sender_label: string; body: string | null; created_at: string; telegram_chat_message_ref: unknown }, fmt: Intl.DateTimeFormat): string | null {
+  const media = mediaRef(r.telegram_chat_message_ref)?.media;
+  const text = Array.from(r.body ?? "").slice(0, 200).join("");
+  const ents = entitiesOf(r.telegram_chat_message_ref).filter((e) => e.type !== "blockquote" && e.type !== "expandable_blockquote");
+  const parts = [media ? (MEDIA_LABEL[media] ?? "📎 Faili") : "", text ? entitiesToHtml(text, ents) : ""].filter(Boolean);
+  if (!parts.length) return null;
+  const d = new Date(r.created_at);
+  const time = Number.isNaN(d.getTime()) ? "" : `<code>${fmt.format(d)}</code> `;
+  return `${time}<b>${escapeHtml(r.sender_label)}</b>: ${parts.join(" · ")}`;
+}
+
+/** Hugawa mistari katika vipande visivyozidi mipaka ya Telegram. */
+function chunkLines(lines: string[]) {
+  const chunks: string[] = [];
+  let cur = "";
+  for (const line of lines) {
+    if (cur && cur.length + line.length + 1 > 3500) { chunks.push(cur); cur = ""; }
+    cur += (cur ? "\n" : "") + line;
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
+/** Hutuma vipande kimoja kimoja kwa pengo la sekunde ~1 (kikomo cha Telegram kwa chat moja). */
+async function sendChunks(chatId: number, chunks: string[]) {
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 1100));
+    await tg("sendMessage", { chat_id: chatId, text: chunks[i]!, parse_mode: "HTML", disable_notification: i > 0 });
+  }
+}
+
+/** Hutuma ujumbe wa masaa 24 yaliyopita (hadi 100) kama vipande vichache. */
 async function sendHistory(chatId: number, userId: number) {
   const now = Date.now();
   if (now - (historyLast.get(userId) ?? 0) < 60_000) {
@@ -377,37 +420,56 @@ async function sendHistory(chatId: number, userId: number) {
       .order("created_at", { ascending: false }).limit(100);
     if (error) throw error;
     const rows = (data ?? []).reverse();
-    const lines: string[] = [];
-    for (const r of rows) {
-      const media = mediaRef(r.telegram_chat_message_ref)?.media;
-      const text = Array.from(r.body ?? "").slice(0, 200).join("");
-      const ents = entitiesOf(r.telegram_chat_message_ref).filter((e) => e.type !== "blockquote" && e.type !== "expandable_blockquote");
-      const parts = [media ? (MEDIA_LABEL[media] ?? "📎 Faili") : "", text ? entitiesToHtml(text, ents) : ""].filter(Boolean);
-      if (!parts.length) continue;
-      const d = new Date(r.created_at);
-      const time = Number.isNaN(d.getTime()) ? "" : `<code>${timeFmt.format(d)}</code> `;
-      lines.push(`${time}<b>${escapeHtml(r.sender_label)}</b>: ${parts.join(" · ")}`);
-    }
+    const lines = rows.map((r) => historyLine(r, timeFmt)).filter((l): l is string => !!l);
     if (!lines.length) {
       await tg("sendMessage", { chat_id: chatId, text: "Hakuna mazungumzo ya masaa 24 yaliyopita." });
       return;
     }
-    const chunks: string[] = [];
-    let cur = "";
-    for (const line of lines) {
-      if (cur && cur.length + line.length + 1 > 3500) { chunks.push(cur); cur = ""; }
-      cur += (cur ? "\n" : "") + line;
-    }
-    if (cur) chunks.push(cur);
-    const shown = chunks.slice(-8);
+    const shown = chunkLines(lines).slice(-8);
     shown[0] = `📜 <b>Mazungumzo ya masaa 24 yaliyopita</b>\n\n${shown[0]}`;
     if ((count ?? 0) > rows.length) shown[shown.length - 1] += `\n\n<i>Zinaonyeshwa za mwisho ${rows.length} kati ya ${count}.</i>`;
-    for (let i = 0; i < shown.length; i++) {
-      if (i > 0) await new Promise((r) => setTimeout(r, 1100));
-      await tg("sendMessage", { chat_id: chatId, text: shown[i]!, parse_mode: "HTML", disable_notification: i > 0 });
-    }
+    await sendChunks(chatId, shown);
   } catch (e) {
     log("error", "history_failed", { error: e instanceof Error ? e.message : JSON.stringify(e) });
     await tg("sendMessage", { chat_id: chatId, text: "⚠️ Imeshindikana kuonyesha mazungumzo ya awali. Jaribu tena baadaye." }).catch(() => {});
+  }
+}
+
+/** /tafuta neno  au  /tafuta @A12 — hurudisha ujumbe 15 wa mwisho unaolingana. */
+async function searchMessages(chatId: number, userId: number, query: string) {
+  const byLabel = query.startsWith("@");
+  const label = byLabel ? query.slice(1).trim() : "";
+  if (byLabel ? !/^[A-Za-z0-9]{1,12}$/.test(label) : query.length < 2) {
+    await tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: "🔎 Andika <code>/tafuta neno</code> kutafuta maneno, au <code>/tafuta @A12</code> kuona ujumbe wa utambulisho mmoja." });
+    return;
+  }
+  const now = Date.now();
+  if (now - (searchLast.get(userId) ?? 0) < 10_000) {
+    await tg("sendMessage", { chat_id: chatId, text: "⏳ Subiri sekunde chache kisha ujaribu tena." });
+    return;
+  }
+  if (searchLast.size > 1000) searchLast.clear();
+  searchLast.set(userId, now);
+  try {
+    const db = await admin();
+    let q = db.from("messages")
+      .select("sender_label, body, created_at, telegram_chat_message_ref", { count: "exact" })
+      .eq("processing_status", "published");
+    q = byLabel ? q.ilike("sender_label", label) : q.ilike("body", `%${query.replace(/[\\%_]/g, "\\$&")}%`);
+    const { data, count, error } = await q.order("created_at", { ascending: false }).limit(15);
+    if (error) throw error;
+    const rows = data ?? [];
+    const lines = rows.map((r) => historyLine(r, dateTimeFmt)).filter((l): l is string => !!l);
+    if (!lines.length) {
+      await tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `Hakuna ujumbe uliopatikana kwa “${escapeHtml(query)}”.` });
+      return;
+    }
+    const chunks = chunkLines(lines).slice(0, 4);
+    chunks[0] = `🔎 <b>Matokeo ya “${escapeHtml(query)}”</b>\n\n${chunks[0]}`;
+    if ((count ?? 0) > rows.length) chunks[chunks.length - 1] += `\n\n<i>Zinaonyeshwa 15 za hivi karibuni kati ya ${count}. Andika neno mahususi zaidi.</i>`;
+    await sendChunks(chatId, chunks);
+  } catch (e) {
+    log("error", "search_failed", { error: e instanceof Error ? e.message : JSON.stringify(e) });
+    await tg("sendMessage", { chat_id: chatId, text: "⚠️ Imeshindikana kutafuta. Jaribu tena baadaye." }).catch(() => {});
   }
 }
