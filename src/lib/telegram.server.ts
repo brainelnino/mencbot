@@ -220,10 +220,11 @@ export async function publishMessage(messageId: string) {
   const db = await admin();
   const { error } = await db.rpc("enqueue_private_message", { _message_id: messageId });
   if (error) throw error;
-  const { data: src, error: srcErr } = await db.from("messages").select("telegram_chat_message_ref").eq("id", messageId).single();
+  const { data: src, error: srcErr } = await db.from("messages").select("telegram_chat_message_ref, body, reply_to_id").eq("id", messageId).single();
   if (srcErr) throw srcErr;
   const ref = mediaRef(src.telegram_chat_message_ref);
   const entities = entitiesOf(src.telegram_chat_message_ref);
+  const notice = await noticeFor(src);
   const showButtons = votesEnabled(await votePolicy(), ref?.media);
   const markup = showButtons ? { reply_markup: voteKeyboard() } : {};
   for (let batch = 0; batch < 5; batch++) {
@@ -237,11 +238,11 @@ export async function publishMessage(messageId: string) {
         const sent = ref
           ? await tg<{ message_id: number }>("copyMessage", {
               chat_id: row.chat_id, from_chat_id: ref.chat_id, message_id: ref.message_id,
-              ...(ref.media === "sticker" ? {} : { parse_mode: "HTML", caption: buildMessageHtml({ ...row, entities }, !row.reply_message_id, 900) }),
+              ...(ref.media === "sticker" ? {} : { parse_mode: "HTML", caption: buildMessageHtml({ ...row, entities, notice: notice(row.chat_id) }, !row.reply_message_id, 900) }),
               ...(row.reply_message_id ? { reply_parameters: { message_id: row.reply_message_id, allow_sending_without_reply: true } } : {}),
               ...markup,
             })
-          : await tg<{ message_id: number }>("sendMessage", { ...telegramMessagePayload({ ...row, entities }), ...markup });
+          : await tg<{ message_id: number }>("sendMessage", { ...telegramMessagePayload({ ...row, entities, notice: notice(row.chat_id) }), ...markup });
         patch = { status: "sent", sent_at: new Date().toISOString(), telegram_message_id: sent.message_id, last_error: null };
       } catch (e) {
         const permanent = e instanceof TelegramError && (e.status === 403 || e.status === 400);
@@ -285,12 +286,18 @@ async function syncReactionEdits(messageId: string) {
   const entities = entitiesOf(msg.telegram_chat_message_ref);
   const sticker = ref?.media === "sticker";
   const reply_markup = votesEnabled(await votePolicy(), ref?.media) ? voteKeyboard(summary ?? []) : { inline_keyboard: [] };
-  const text = withReactionFooter(ref ? buildMessageHtml({ sender_label: msg.sender_label, body: msg.body, entities, ...reply }, true, 900) : telegramStoredMessageText({ sender_label: msg.sender_label, body: msg.body, entities, ...reply }), (summary ?? []).filter((r) => r.emoji !== "✅" && r.emoji !== "❌"));
+  const notice = await noticeFor({ body: msg.body, reply_to_id: msg.reply_to_id });
+  const footerCounts = (summary ?? []).filter((r) => r.emoji !== "✅" && r.emoji !== "❌");
+  const textFor = (chatId: number) => {
+    const row = { sender_label: msg.sender_label, body: msg.body, entities, notice: notice(chatId), ...reply };
+    return withReactionFooter(ref ? buildMessageHtml(row, true, 900) : telegramStoredMessageText(row), footerCounts);
+  };
   const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
   if (delError) throw delError;
   await Promise.all((deliveries ?? []).map(async (d) => {
     const chatId = (d.members as { telegram_user_id: number } | null)?.telegram_user_id;
     if (!chatId || !d.telegram_message_id) return;
+    const text = textFor(chatId);
     try {
       if (sticker) await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: d.telegram_message_id, reply_markup });
       else await tg(ref ? "editMessageCaption" : "editMessageText", { chat_id: chatId, message_id: d.telegram_message_id, parse_mode: "HTML", reply_markup, ...(ref ? { caption: text } : { text }) });
@@ -303,4 +310,32 @@ async function syncReactionEdits(messageId: string) {
 
 function entitiesOf(v: unknown): TgEntity[] {
   return normalizeEntities((v as { entities?: unknown } | null)?.entities);
+}
+
+function origRef(v: unknown): { chat_id: number; message_id: number } | null {
+  const r = v as { chat_id?: number; message_id?: number } | null;
+  return r?.chat_id && r.message_id ? { chat_id: r.chat_id, message_id: r.message_id } : null;
+}
+
+/** Hurudisha kazi inayotoa mstari wa arifa (jibu/tag) kwa kila mpokeaji. */
+async function noticeFor(msg: { body: string | null; reply_to_id: string | null }) {
+  const db = await admin();
+  let replyChat: number | null = null;
+  if (msg.reply_to_id) {
+    const { data: parent } = await db.from("messages").select("telegram_chat_message_ref").eq("id", msg.reply_to_id).maybeSingle();
+    replyChat = origRef(parent?.telegram_chat_message_ref)?.chat_id ?? null;
+  }
+  const tagged = new Set<number>();
+  const tags = [...new Set((msg.body?.match(/@([A-Za-z0-9]{1,12})/g) ?? []).map((s) => s.slice(1).toUpperCase()))].slice(0, 5);
+  if (tags.length) {
+    const { data: rows } = await db.from("members").select("telegram_user_id, public_identities!inner(label)").eq("status", "active").in("public_identities.label", tags);
+    for (const r of rows ?? []) tagged.add(r.telegram_user_id);
+  }
+  return (chatId: number) => {
+    const replied = chatId === replyChat, mentioned = tagged.has(chatId);
+    if (replied && mentioned) return "🔔 <b>Amejibu ujumbe wako na kukutaja</b>\n";
+    if (replied) return "🔔 <b>Amejibu ujumbe wako</b>\n";
+    if (mentioned) return "🔔 <b>Umetajwa</b>\n";
+    return "";
+  };
 }
