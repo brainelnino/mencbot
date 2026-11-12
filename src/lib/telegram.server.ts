@@ -66,14 +66,16 @@ async function votePolicy() {
   return parseVotePolicy(data?.value);
 }
 
+// Aina mpya za sasisho zinahifadhiwa kama "private_other" ili safu ya update_kind isikatae thamani mpya.
+const EXTRA_KINDS: string[] = ["history", "search", "admin_pin"];
+
 /** Processes one verified update idempotently. */
 export async function handleUpdate(update: TgUpdate) {
   const db = await admin();
   const c = classifyUpdate(update);
 
   // Idempotency: claim the update_id. Duplicate deliveries of processed updates are skipped.
-  // "history" and "search" are stored as "private_other" so the existing update_kind column never rejects a new value.
-  const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: c.kind === "history" || c.kind === "search" ? "private_other" : c.kind });
+  const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: EXTRA_KINDS.includes(c.kind) ? "private_other" : c.kind });
   if (insErr) {
     if (insErr.code !== "23505") throw insErr;
     const { data: prev } = await db.from("telegram_updates").select("status,attempts").eq("update_id", update.update_id).single();
@@ -115,6 +117,22 @@ export async function handleUpdate(update: TgUpdate) {
         if (!mem) { await tg("sendMessage", { chat_id: c.chatId, text: "Tuma /start kwanza ili kujisajili." }); break; }
         if (mem.status !== "active") { status = "ignored"; break; }
         await searchMessages(c.chatId, c.userId, c.query);
+        break;
+      }
+      case "admin_pin": {
+        const { data: slot, error: slotError } = await db.rpc("get_telegram_admin_slot", { _tg_user_id: c.userId });
+        if (slotError) throw slotError;
+        if (!slot) { await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.noPermission }); break; }
+        const { data: mem } = await db.from("members").select("id").eq("telegram_user_id", c.userId).maybeSingle();
+        if (!mem || c.replyMessageId === null) {
+          await tg("sendMessage", { chat_id: c.chatId, text: "📌 Jibu ujumbe unaotaka kubandika kwa wote kisha andika /pin. Kuuondoa, jibu ujumbe huo na uandike /unpin." });
+          break;
+        }
+        const { data: target, error: replyError } = await db.rpc("resolve_telegram_reply", { _member_id: mem.id, _telegram_message_id: c.replyMessageId });
+        if (replyError) throw replyError;
+        if (!target) { await tg("sendMessage", { chat_id: c.chatId, text: "⚠️ Ujumbe huo haujapatikana. Jibu ujumbe wa kwenye chat." }); break; }
+        const res = await pinEverywhere(target, c.action);
+        await tg("sendMessage", { chat_id: c.chatId, text: c.action === "pin" ? `📌 Imebandikwa kwa chat ${res.done} kati ya ${res.total}.` : `📍 Imeondolewa kwa chat ${res.done} kati ya ${res.total}.` });
         break;
       }
       case "private_text":
@@ -356,6 +374,32 @@ async function noticeFor(msg: { body: string | null; reply_to_id: string | null 
     if (mentioned) return "🔔 <b>Umetajwa</b>\n";
     return "";
   };
+}
+
+/** Hubandika (pin) au kuondoa pin ya ujumbe kwenye chat ya kila mwanachama. Arifa zimezimwa kwenye chat binafsi. */
+async function pinEverywhere(messageId: string, action: "pin" | "unpin") {
+  const db = await admin();
+  const { data: msg, error: msgError } = await db.from("messages").select("telegram_chat_message_ref").eq("id", messageId).single();
+  if (msgError) throw msgError;
+  const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
+  if (delError) throw delError;
+  const targets: Array<{ chat_id: number; message_id: number }> = [];
+  const own = origRef(msg.telegram_chat_message_ref);
+  if (own) targets.push(own);
+  for (const d of deliveries ?? []) {
+    const chat = (d.members as { telegram_user_id: number } | null)?.telegram_user_id;
+    if (chat && d.telegram_message_id) targets.push({ chat_id: chat, message_id: d.telegram_message_id });
+  }
+  let done = 0;
+  for (let i = 0; i < targets.length; i += 25) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 1100));
+    const results = await Promise.allSettled(targets.slice(i, i + 25).map((x) =>
+      action === "pin"
+        ? tg("pinChatMessage", { chat_id: x.chat_id, message_id: x.message_id, disable_notification: true })
+        : tg("unpinChatMessage", { chat_id: x.chat_id, message_id: x.message_id })));
+    done += results.filter((r) => r.status === "fulfilled").length;
+  }
+  return { done, total: targets.length };
 }
 
 // ---- Historia na kutafuta (muda wote ni saa za Afrika Mashariki) ----
