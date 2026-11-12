@@ -54,6 +54,7 @@ export type Classified =
   | { kind: "start"; userId: number; chatId: number }
   | { kind: "history"; userId: number; chatId: number; messageId: number | null; callbackId: string | null }
   | { kind: "search"; userId: number; chatId: number; query: string }
+  | { kind: "admin_pin"; userId: number; chatId: number; action: "pin" | "unpin"; replyMessageId: number | null }
   | { kind: "private_text"; userId: number; chatId: number; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
   | { kind: "private_media"; userId: number; chatId: number; media: MediaType; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
   | { kind: "private_other"; userId: number; chatId: number }
@@ -103,6 +104,8 @@ export function classifyUpdate(u: TgUpdate): Classified {
     if (/^\/(historia|history)(@\w+)?\s*$/i.test(text)) return { kind: "history", userId: m.from.id, chatId: m.chat.id, messageId: null, callbackId: null };
     const sq = /^\/(tafuta|search)(?:@\w+)?(?:\s+([\s\S]+))?$/i.exec(text);
     if (sq) return { kind: "search", userId: m.from.id, chatId: m.chat.id, query: (sq[2] ?? "").trim().slice(0, 100) };
+    const pin = /^\/(pin|unpin)(?:@\w+)?\s*$/i.exec(text);
+    if (pin?.[1]) return { kind: "admin_pin", userId: m.from.id, chatId: m.chat.id, action: pin[1].toLowerCase() as "pin" | "unpin", replyMessageId: m.reply_to_message?.message_id ?? null };
     const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
     if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), entities: normalizeEntities(m.entities, raw.length - raw.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
