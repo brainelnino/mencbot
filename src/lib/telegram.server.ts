@@ -22,6 +22,7 @@ export async function tg<T = unknown>(method: string, body: Record<string, unkno
   if (!lovableKey || !tgKey) throw new TelegramError("Telegram haijasanidiwa kwenye seva", 500, false);
   let last: TelegramError | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
+    let wait = 600;
     try {
       const res = await fetch(`${GATEWAY_URL}/${method}`, {
         method: "POST",
@@ -30,17 +31,20 @@ export async function tg<T = unknown>(method: string, body: Record<string, unkno
         signal: AbortSignal.timeout(timeoutMs),
       });
       const text = await res.text();
-      let json: { ok?: boolean; result?: T; description?: string } = {};
+      let json: { ok?: boolean; result?: T; description?: string; parameters?: { retry_after?: number } } = {};
       try { json = JSON.parse(text); } catch { /* non-JSON */ }
       if (res.ok && json.ok) return json.result as T;
       const retryable = res.status === 429 || res.status >= 500;
       last = new TelegramError(`${method} [${res.status}]: ${json.description ?? text.slice(0, 300)}`, res.status, retryable);
       if (!retryable) break;
+      // Telegram inasema ni muda gani wa kusubiri ikizuia kasi (429).
+      if (res.status === 429 && json.parameters?.retry_after) wait = Math.min(json.parameters.retry_after * 1000, 3000);
     } catch (e) {
       last = new TelegramError(`${method}: ${e instanceof Error ? e.message : String(e)}`, 0, true);
     }
     log("warn", "api_retry", { method, attempt, error: last?.message });
-    await new Promise((r) => setTimeout(r, 600));
+    if (attempt === 1) break;
+    await new Promise((r) => setTimeout(r, wait));
   }
   throw last ?? new TelegramError("Telegram request failed", 0, true);
 }
@@ -66,8 +70,21 @@ async function votePolicy() {
   return parseVotePolicy(data?.value);
 }
 
-// Aina mpya za sasisho zinahifadhiwa kama "private_other" ili safu ya update_kind isikatae thamani mpya.
-const EXTRA_KINDS: string[] = ["history", "search", "admin_pin"];
+const POLL_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"] as const;
+
+function pollOf(v: unknown): { options: string[]; closed: boolean } | null {
+  const p = (v as { poll?: { options?: unknown; closed?: unknown } } | null)?.poll;
+  return p && Array.isArray(p.options) && p.options.length >= 2 ? { options: p.options.map(String), closed: p.closed === true } : null;
+}
+
+function pollKeyboard(count: number, summary: Array<{ emoji: string; total: number | bigint }> = []) {
+  return {
+    inline_keyboard: [POLL_EMOJIS.slice(0, count).map((e, i) => {
+      const n = Number(summary.find((s) => s.emoji === e)?.total ?? 0);
+      return { text: n ? `${e} ${n}` : e, callback_data: `p:${i}` };
+    })],
+  };
+}
 
 /** Processes one verified update idempotently. */
 export async function handleUpdate(update: TgUpdate) {
@@ -75,7 +92,9 @@ export async function handleUpdate(update: TgUpdate) {
   const c = classifyUpdate(update);
 
   // Idempotency: claim the update_id. Duplicate deliveries of processed updates are skipped.
-  const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: EXTRA_KINDS.includes(c.kind) ? "private_other" : c.kind });
+  // Aina mpya zinahifadhiwa kama "private_other" ili safu ya update_kind isikatae thamani mpya.
+  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "poll_vote" ? "private_other" : c.kind;
+  const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: kindForDb });
   if (insErr) {
     if (insErr.code !== "23505") throw insErr;
     const { data: prev } = await db.from("telegram_updates").select("status,attempts").eq("update_id", update.update_id).single();
@@ -119,6 +138,13 @@ export async function handleUpdate(update: TgUpdate) {
         await searchMessages(c.chatId, c.userId, c.query);
         break;
       }
+      case "admin_diag": {
+        const { data: slot, error: slotError } = await db.rpc("get_telegram_admin_slot", { _tg_user_id: c.userId });
+        if (slotError) throw slotError;
+        if (!slot) { await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.noPermission }); break; }
+        await sendDiagnostics(c.chatId);
+        break;
+      }
       case "admin_pin": {
         const { data: slot, error: slotError } = await db.rpc("get_telegram_admin_slot", { _tg_user_id: c.userId });
         if (slotError) throw slotError;
@@ -135,6 +161,83 @@ export async function handleUpdate(update: TgUpdate) {
         await tg("sendMessage", { chat_id: c.chatId, text: c.action === "pin" ? `📌 Imebandikwa kwa chat ${res.done} kati ya ${res.total}.` : `📍 Imeondolewa kwa chat ${res.done} kati ya ${res.total}.` });
         break;
       }
+      case "admin_poll": {
+        const { data: slot, error: slotError } = await db.rpc("get_telegram_admin_slot", { _tg_user_id: c.userId });
+        if (slotError) throw slotError;
+        if (!slot) { await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.noPermission }); break; }
+        const { data: mem } = await db.from("members").select("id").eq("telegram_user_id", c.userId).maybeSingle();
+        if (c.action === "close") {
+          let targetId: string | null = null;
+          if (c.replyMessageId !== null && mem) {
+            const { data: resolved, error: resolveError } = await db.rpc("resolve_telegram_reply", { _member_id: mem.id, _telegram_message_id: c.replyMessageId });
+            if (resolveError) throw resolveError;
+            targetId = resolved;
+          }
+          if (!targetId) {
+            const { data: recent, error: recentError } = await db.from("messages").select("id, telegram_chat_message_ref").eq("processing_status", "published").order("created_at", { ascending: false }).limit(100);
+            if (recentError) throw recentError;
+            targetId = recent?.find((m) => { const p = pollOf(m.telegram_chat_message_ref); return !!p && !p.closed; })?.id ?? null;
+          }
+          if (!targetId) { await tg("sendMessage", { chat_id: c.chatId, text: "Hakuna poll iliyo wazi. Jibu poll unayotaka kufunga kisha andika /pollfunga." }); break; }
+          const { data: row, error: rowError } = await db.from("messages").select("telegram_chat_message_ref").eq("id", targetId).single();
+          if (rowError) throw rowError;
+          const poll = pollOf(row.telegram_chat_message_ref);
+          if (!poll) { await tg("sendMessage", { chat_id: c.chatId, text: "Ujumbe huo si poll." }); break; }
+          if (poll.closed) { await tg("sendMessage", { chat_id: c.chatId, text: "Poll hiyo tayari imefungwa." }); break; }
+          const { error: closeError } = await db.from("messages").update({ telegram_chat_message_ref: { ...(row.telegram_chat_message_ref as Record<string, unknown>), poll: { ...poll, closed: true } } as never }).eq("id", targetId);
+          if (closeError) throw closeError;
+          await syncReactionEdits(targetId);
+          await tg("sendMessage", { chat_id: c.chatId, text: "🔒 Poll imefungwa na matokeo yametumwa kwa wote." });
+          break;
+        }
+        const parts = c.raw.split("|").map((s) => s.trim()).filter(Boolean);
+        if (parts.length < 3 || parts.length > 5 || parts.some((s, i) => s.length > (i === 0 ? 200 : 60))) {
+          await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: "📊 Andika: <code>/poll Swali | Chaguo 1 | Chaguo 2 | Chaguo 3</code>\nChaguo ni 2 hadi 4 (kila moja hadi herufi 60). Kuifunga andika <code>/pollfunga</code>." });
+          break;
+        }
+        const [question, ...options] = parts as [string, ...string[]];
+        const body = `📊 ${question}\n\n${options.map((o, i) => `${POLL_EMOJIS[i]} ${o}`).join("\n")}`;
+        const pollRow = (member_id: string) => ({
+          member_id, sender_label: "📊 Poll", kind: "text" as const, body, reply_to_id: null,
+          telegram_chat_message_ref: { poll: { options, closed: false } },
+          source_update_id: update.update_id, moderation_status: "pending" as const,
+          publication_status: "unpublished" as const, processing_status: "awaiting_moderation" as const,
+        });
+        const upsertOpts = { onConflict: "source_update_id", ignoreDuplicates: true };
+        let ins = await db.from("messages").upsert(pollRow(null as unknown as string), upsertOpts);
+        if (ins.error && mem) ins = await db.from("messages").upsert(pollRow(mem.id), upsertOpts);
+        if (ins.error) throw ins.error;
+        const { data: pollMsg, error: pollErr } = await db.from("messages").select("id").eq("source_update_id", update.update_id).single();
+        if (pollErr) throw pollErr;
+        await publishMessage(pollMsg.id);
+        await tg("sendMessage", { chat_id: c.chatId, text: "📊 Poll imetumwa kwa wanachama. Kuifunga andika /pollfunga." });
+        break;
+      }
+      case "poll_vote": {
+        const answer = (text = "") => tg("answerCallbackQuery", { callback_query_id: c.callbackId, ...(text ? { text } : {}) }).catch(() => {});
+        const { data: mem } = await db.from("members").select("id,status").eq("telegram_user_id", c.userId).maybeSingle();
+        if (!mem || mem.status !== "active") { await answer("Tuma /start kwanza."); status = "ignored"; break; }
+        const { data: target } = await db.from("telegram_deliveries").select("message_id").eq("member_id", mem.id).eq("telegram_message_id", c.messageId).eq("status", "sent").maybeSingle();
+        if (!target) { await answer("Poll haipatikani."); status = "ignored"; break; }
+        const { data: message, error: messageError } = await db.from("messages").select("telegram_chat_message_ref").eq("id", target.message_id).single();
+        if (messageError) throw messageError;
+        const poll = pollOf(message.telegram_chat_message_ref);
+        if (!poll || c.option >= poll.options.length) { await answer("Chaguo hili halipo."); status = "ignored"; break; }
+        if (poll.closed) { await answer("🔒 Kura zimefungwa."); status = "ignored"; break; }
+        const emoji = POLL_EMOJIS[c.option]!;
+        const { data: cur } = await db.from("message_reactions").select("emoji").eq("message_id", target.message_id).eq("member_id", mem.id).maybeSingle();
+        const next = cur?.emoji === emoji ? "" : emoji;
+        const { data: pollMessageId, error: voteError } = await db.rpc("record_telegram_reaction", { _tg_user_id: c.userId, _telegram_message_id: c.messageId, _emoji: next });
+        if (voteError || !pollMessageId) {
+          log("error", "poll_vote_failed", { error: voteError ? voteError.message : "no message" });
+          await answer("⚠️ Kura haijahifadhiwa.");
+          status = "ignored";
+          break;
+        }
+        await answer(next ? `${next} Umepiga kura` : "Kura imeondolewa");
+        await syncReactionEdits(pollMessageId);
+        break;
+      }
       case "private_text":
       case "private_media": {
         const media = c.kind === "private_media" ? c.media : null;
@@ -145,13 +248,15 @@ export async function handleUpdate(update: TgUpdate) {
           break;
         }
         if (mem.status !== "active") { status = "ignored"; break; }
-        const { data: policyRow } = await db.from("system_settings").select("value").eq("key", "content_policy").maybeSingle();
+        const [{ data: policyRow }, { data: termRows, error: termError }] = await Promise.all([
+          db.from("system_settings").select("value").eq("key", "content_policy").maybeSingle(),
+          db.from("blocked_terms").select("term"),
+        ]);
         const rejection = contentRejection(parsePolicy(policyRow?.value), mem.can_send_restricted, media, hasLink(c.text), hasPhone(c.text));
         if (rejection) {
           await tg("sendMessage", { chat_id: c.chatId, text: rejection === "media" ? "⚠️ Ujumbe haujatumwa: aina hii ya faili/picha hairuhusiwi kwa sasa." : "⚠️ Ujumbe haujatumwa: link na namba za simu haziruhusiwi." });
           status = "ignored"; break;
         }
-        const { data: termRows, error: termError } = await db.from("blocked_terms").select("term");
         if (termError) throw termError;
         if (findBlockedTerm(c.text, (termRows ?? []).map((r) => r.term))) {
           await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.blockedTerm });
@@ -170,11 +275,15 @@ export async function handleUpdate(update: TgUpdate) {
           publication_status: "unpublished", processing_status: "awaiting_moderation",
         }, { onConflict: "source_update_id", ignoreDuplicates: true });
         if (error) throw error;
-        await db.from("members").update({ last_active_at: new Date().toISOString() }).eq("id", mem.id);
-        await db.from("activity_events").insert({ member_id: mem.id, event_type: "message_received" });
+        // Kazi za kumbukumbu zinaendeshwa sambamba na utumaji ili zisichelewesha ujumbe.
+        const bookkeeping = Promise.all([
+          db.from("members").update({ last_active_at: new Date().toISOString() }).eq("id", mem.id),
+          db.from("activity_events").insert({ member_id: mem.id, event_type: "message_received" }),
+        ]);
         const { data: msg, error: msgError } = await db.from("messages").select("id").eq("source_update_id", update.update_id).single();
         if (msgError) throw msgError;
         await publishMessage(msg.id);
+        await bookkeeping;
         break;
       }
       case "admin_command": {
@@ -249,6 +358,23 @@ export async function handleUpdate(update: TgUpdate) {
 }
 
 /**
+ * Husubiri hadi sekunde 6 ujumbe wa awali (update_id ndogo, ndani ya 20 zilizopita) ukamilike,
+ * ili ujumbe usivuke mpangilio. Ni jaribio bora zaidi, si hakikisho kamili.
+ */
+async function waitForEarlier(updateId: number | null) {
+  if (!updateId) return;
+  const db = await admin();
+  const deadline = Date.now() + 6000;
+  while (Date.now() < deadline) {
+    const { data } = await db.from("telegram_updates").select("update_id")
+      .in("update_kind", ["private_text", "private_media"]).eq("status", "received")
+      .lt("update_id", updateId).gte("update_id", updateId - 20).limit(1);
+    if (!data?.length) return;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+}
+
+/**
  * Direct private broadcast. Sent recipients are never deliberately resent.
  * Telegram retries the webhook if transient failures or pending recipients remain.
  */
@@ -256,14 +382,17 @@ export async function publishMessage(messageId: string) {
   const db = await admin();
   const { error } = await db.rpc("enqueue_private_message", { _message_id: messageId });
   if (error) throw error;
-  const { data: src, error: srcErr } = await db.from("messages").select("telegram_chat_message_ref, body, reply_to_id").eq("id", messageId).single();
+  const { data: src, error: srcErr } = await db.from("messages").select("telegram_chat_message_ref, body, reply_to_id, source_update_id").eq("id", messageId).single();
   if (srcErr) throw srcErr;
   const ref = mediaRef(src.telegram_chat_message_ref);
   const entities = entitiesOf(src.telegram_chat_message_ref);
-  const notice = await noticeFor(src);
-  const showButtons = votesEnabled(await votePolicy(), ref?.media);
-  const markup = showButtons ? { reply_markup: voteKeyboard() } : {};
-  for (let batch = 0; batch < 5; batch++) {
+  const poll = pollOf(src.telegram_chat_message_ref);
+  const [policy, notice] = await Promise.all([votePolicy(), noticeFor(src), waitForEarlier(src.source_update_id)]);
+  const markup = poll
+    ? { reply_markup: pollKeyboard(poll.options.length) }
+    : votesEnabled(policy, ref?.media) ? { reply_markup: voteKeyboard() } : {};
+  const startedAt = Date.now();
+  for (let batch = 0; batch < 20 && Date.now() - startedAt < 25_000; batch++) {
     const { data: rows, error: claimError } = await db.rpc("claim_private_deliveries_v2", { _message_id: messageId });
     if (claimError) throw claimError;
     if (!rows?.length) break;
@@ -288,7 +417,8 @@ export async function publishMessage(messageId: string) {
       const { error: saveError } = await db.from("telegram_deliveries").update(patch).eq("id", row.id);
       if (saveError) throw saveError;
     }));
-    if (temporaryFailure) throw new TelegramError("Baadhi ya ujumbe utajaribiwa tena", 503, true);
+    // Jaribu tena ndani ya ombi hili kwa muda mfupi badala ya kusubiri Telegram irudie webhook.
+    if (temporaryFailure) await new Promise((r) => setTimeout(r, 1000));
   }
   const { data: source, error: sourceError } = await db.from("messages").select("member_id").eq("id", messageId).single();
   if (sourceError) throw sourceError;
@@ -320,13 +450,19 @@ async function syncReactionEdits(messageId: string) {
   }
   const ref = mediaRef(msg.telegram_chat_message_ref);
   const entities = entitiesOf(msg.telegram_chat_message_ref);
+  const poll = pollOf(msg.telegram_chat_message_ref);
   const sticker = ref?.media === "sticker";
-  const reply_markup = votesEnabled(await votePolicy(), ref?.media) ? voteKeyboard(summary ?? []) : { inline_keyboard: [] };
+  const reply_markup = poll
+    ? (poll.closed ? { inline_keyboard: [] } : pollKeyboard(poll.options.length, summary ?? []))
+    : votesEnabled(await votePolicy(), ref?.media) ? voteKeyboard(summary ?? []) : { inline_keyboard: [] };
   const notice = await noticeFor({ body: msg.body, reply_to_id: msg.reply_to_id });
-  const footerCounts = (summary ?? []).filter((r) => r.emoji !== "✅" && r.emoji !== "❌");
+  const footerCounts = poll ? [] : (summary ?? []).filter((r) => r.emoji !== "✅" && r.emoji !== "❌");
+  const resultsText = poll?.closed
+    ? `\n\n🔒 <b>Kura zimefungwa. Matokeo:</b>\n${poll.options.map((o, i) => `${POLL_EMOJIS[i]} ${escapeHtml(o)}: <b>${Number((summary ?? []).find((s) => s.emoji === POLL_EMOJIS[i])?.total ?? 0)}</b>`).join("\n")}`
+    : "";
   const textFor = (chatId: number) => {
     const row = { sender_label: msg.sender_label, body: msg.body, entities, notice: notice(chatId), ...reply };
-    return withReactionFooter(ref ? buildMessageHtml(row, true, 900) : telegramStoredMessageText(row), footerCounts);
+    return withReactionFooter(ref ? buildMessageHtml(row, true, 900) : telegramStoredMessageText(row), footerCounts) + resultsText;
   };
   const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
   if (delError) throw delError;
@@ -402,7 +538,7 @@ async function pinEverywhere(messageId: string, action: "pin" | "unpin") {
   return { done, total: targets.length };
 }
 
-// ---- Historia na kutafuta (muda wote ni saa za Afrika Mashariki) ----
+// ---- Historia, kutafuta na uchunguzi (muda wote ni saa za Afrika Mashariki) ----
 
 // Kinga ndogo dhidi ya kubonyeza mara nyingi (kwa kila seva, si kamili).
 const historyLast = new Map<number, number>();
@@ -516,4 +652,33 @@ async function searchMessages(chatId: number, userId: number, query: string) {
     log("error", "search_failed", { error: e instanceof Error ? e.message : JSON.stringify(e) });
     await tg("sendMessage", { chat_id: chatId, text: "⚠️ Imeshindikana kutafuta. Jaribu tena baadaye." }).catch(() => {});
   }
+}
+
+/** /uchunguzi (admin): ujumbe 5 wa mwisho, hali za utumaji na muda wa kufika. */
+async function sendDiagnostics(chatId: number) {
+  const db = await admin();
+  const { data: msgs, error } = await db.from("messages").select("id, created_at").eq("processing_status", "published").order("created_at", { ascending: false }).limit(5);
+  if (error) throw error;
+  if (!msgs?.length) {
+    await tg("sendMessage", { chat_id: chatId, text: "Hakuna ujumbe wa kuchunguza bado." });
+    return;
+  }
+  const lines: string[] = [];
+  for (const m of msgs) {
+    const { data: ds, error: dErr } = await db.from("telegram_deliveries").select("status, sent_at, last_error").eq("message_id", m.id);
+    if (dErr) throw dErr;
+    const rows = ds ?? [];
+    const started = new Date(m.created_at).getTime();
+    const lat = rows
+      .filter((d) => d.status === "sent" && d.sent_at)
+      .map((d) => (new Date(d.sent_at as string).getTime() - started) / 1000)
+      .filter((n) => Number.isFinite(n) && n >= 0);
+    const count = (s: string) => rows.filter((d) => d.status === s).length;
+    const max = lat.length ? Math.max(...lat) : 0;
+    const avg = lat.length ? lat.reduce((a, b) => a + b, 0) / lat.length : 0;
+    const bad = rows.find((d) => d.last_error)?.last_error?.slice(0, 80);
+    const when = new Date(m.created_at);
+    lines.push(`<code>${Number.isNaN(when.getTime()) ? "?" : dateTimeFmt.format(when)}</code> ✅${count("sent")} ⏳${count("pending") + count("sending")} ⚠️${count("failed")} 🚫${count("unreachable")} · wastani ${avg.toFixed(1)}s · juu ${max.toFixed(1)}s${bad ? `\n   ${escapeHtml(bad)}` : ""}`);
+  }
+  await tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `🛠 <b>Ujumbe 5 wa mwisho</b>\n(muda kutoka ujumbe kuingia hadi kufika)\n\n${lines.join("\n")}` });
 }
