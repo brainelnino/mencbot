@@ -15,6 +15,20 @@ function log(level: "info" | "warn" | "error", event: string, data: Record<strin
   console[level](JSON.stringify({ src: "telegram", event, ...data }));
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Hupanga mwanzo wa maombi ili yasizidi `perSecond` kwa sekunde (kikomo cha Telegram ni ~30). */
+function rateGate(perSecond: number) {
+  const gap = 1000 / perSecond;
+  let next = Date.now();
+  return async () => {
+    const now = Date.now();
+    const at = Math.max(now, next);
+    next = at + gap;
+    if (at > now) await sleep(at - now);
+  };
+}
+
 /** Calls the Telegram Bot API through the gateway with a timeout and one retry on temporary failures. */
 export async function tg<T = unknown>(method: string, body: Record<string, unknown> = {}, timeoutMs = 8000): Promise<T> {
   const lovableKey = process.env["LOVABLE_API_KEY"];
@@ -44,7 +58,7 @@ export async function tg<T = unknown>(method: string, body: Record<string, unkno
     }
     log("warn", "api_retry", { method, attempt, error: last?.message });
     if (attempt === 1) break;
-    await new Promise((r) => setTimeout(r, wait));
+    await sleep(wait);
   }
   throw last ?? new TelegramError("Telegram request failed", 0, true);
 }
@@ -117,6 +131,8 @@ export async function handleUpdate(update: TgUpdate) {
         }
         const row = data?.[0];
         if (!row) throw new Error("Usajili haukurudisha utambulisho");
+        // Mtu aliyezuia bot kisha akarudi kwa /start anaanza kupokea ujumbe tena.
+        await db.from("members").update({ last_active_at: new Date().toISOString() }).eq("telegram_user_id", c.userId);
         await tg("sendMessage", { chat_id: c.chatId, text: row.is_new ? `Karibu ${await brandName()} 🇹🇿\n${row.label}` : t.telegram.welcomeBack(row.label) });
         if (row.is_new) await tg("sendMessage", { chat_id: c.chatId, text: "📜 Unataka kuona mazungumzo ya masaa 24 yaliyopita? Unaweza pia kuandika /historia wakati wowote.", reply_markup: { inline_keyboard: [[{ text: "📜 Ona ya masaa 24", callback_data: "h:24" }]] } });
         log("info", "registered", { is_new: row.is_new });
@@ -262,24 +278,37 @@ export async function handleUpdate(update: TgUpdate) {
           await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.blockedTerm });
           status = "ignored"; break;
         }
-        let replyToId: string | null = null;
-        if (c.replyMessageId !== null) {
-          const { data: parent, error: replyError } = await db.rpc("resolve_telegram_reply", { _member_id: mem.id, _telegram_message_id: c.replyMessageId });
-          if (replyError) throw replyError;
-          replyToId = parent;
+        // Sheria: ujumbe uliotumwa kwa Reply ni wa siri (kwa mwenye ujumbe aliyejibiwa pekee); bila Reply ni wa wazi.
+        const route: ReplyRoute = c.replyMessageId !== null ? await resolveReplyRoute(mem.id, c.chatId, c.replyMessageId) : { kind: "public" };
+        if (route.kind === "unknown") {
+          await tg("sendMessage", {
+            chat_id: c.chatId,
+            text: "⚠️ Jibu halijatumwa: sikuweza kutambua ujumbe uliojibu. Tuma bila Reply ili iwe ya wazi kwa wote.",
+            reply_parameters: { message_id: c.messageId, allow_sending_without_reply: true },
+          });
+          status = "ignored"; break;
+        }
+        const touch = () => Promise.all([
+          db.from("members").update({ last_active_at: new Date().toISOString() }).eq("id", mem.id),
+          db.from("activity_events").insert({ member_id: mem.id, event_type: "message_received" }),
+        ]);
+        if (route.kind === "private") {
+          await sendPrivateReply({
+            updateId: update.update_id, memberId: mem.id, senderLabel: label, chatId: c.chatId, messageId: c.messageId,
+            media, text: c.text, entities: c.entities, to: route,
+          });
+          await touch();
+          break;
         }
         const { error } = await db.from("messages").upsert({
           member_id: mem.id, sender_label: label, kind: media === "photo" ? "image" : "text", body: c.text || null,
-          reply_to_id: replyToId, telegram_chat_message_ref: { message_id: c.messageId, chat_id: c.chatId, media, entities: c.entities },
+          reply_to_id: null, telegram_chat_message_ref: { message_id: c.messageId, chat_id: c.chatId, media, entities: c.entities },
           source_update_id: update.update_id, moderation_status: "pending",
           publication_status: "unpublished", processing_status: "awaiting_moderation",
         }, { onConflict: "source_update_id", ignoreDuplicates: true });
         if (error) throw error;
         // Kazi za kumbukumbu zinaendeshwa sambamba na utumaji ili zisichelewesha ujumbe.
-        const bookkeeping = Promise.all([
-          db.from("members").update({ last_active_at: new Date().toISOString() }).eq("id", mem.id),
-          db.from("activity_events").insert({ member_id: mem.id, event_type: "message_received" }),
-        ]);
+        const bookkeeping = touch();
         const { data: msg, error: msgError } = await db.from("messages").select("id").eq("source_update_id", update.update_id).single();
         if (msgError) throw msgError;
         await publishMessage(msg.id);
@@ -370,7 +399,44 @@ async function waitForEarlier(updateId: number | null) {
       .in("update_kind", ["private_text", "private_media"]).eq("status", "received")
       .lt("update_id", updateId).gte("update_id", updateId - 20).limit(1);
     if (!data?.length) return;
-    await new Promise((r) => setTimeout(r, 400));
+    await sleep(400);
+  }
+}
+
+/**
+ * Chat ambazo zimekosa kupokea ujumbe 3 mfululizo (bot imezuiwa) na mwenyewe hajaandika au kubonyeza /start tangu hapo.
+ * Hizi zinarukwa ili zisipoteze muda; zikirudi kwa kuandika zinaanza kupokea tena.
+ */
+async function likelyBlockedChats(currentMessageId: string): Promise<Set<number>> {
+  try {
+    const db = await admin();
+    const { data: recent } = await db.from("messages").select("id, created_at").eq("processing_status", "published").neq("id", currentMessageId)
+      .filter("telegram_chat_message_ref->>private", "is", null)
+      .order("created_at", { ascending: false }).limit(3);
+    if (!recent || recent.length < 3) return new Set();
+    const lists = await Promise.all(recent.map((m) => db.from("telegram_deliveries").select("member_id").eq("message_id", m.id).eq("status", "unreachable").limit(1000)));
+    let ids: Set<string> | null = null;
+    for (const l of lists) {
+      const cur = new Set((l.data ?? []).map((d) => String(d.member_id)));
+      ids = ids ? new Set([...ids].filter((x) => cur.has(x))) : cur;
+    }
+    if (!ids || !ids.size) return new Set();
+    const oldest = new Date(recent[2]!.created_at).getTime();
+    const all = [...ids];
+    const out = new Set<number>();
+    const parts: string[][] = [];
+    for (let i = 0; i < all.length; i += 80) parts.push(all.slice(i, i + 80));
+    const results = await Promise.all(parts.map((p) => db.from("members").select("telegram_user_id, last_active_at").in("id", p)));
+    for (const r of results) {
+      for (const m of r.data ?? []) {
+        const active = m.last_active_at ? new Date(m.last_active_at).getTime() : 0;
+        if (!(active > oldest)) out.add(m.telegram_user_id);
+      }
+    }
+    return out;
+  } catch (e) {
+    log("warn", "blocked_lookup_failed", { error: e instanceof Error ? e.message : JSON.stringify(e) });
+    return new Set();
   }
 }
 
@@ -387,19 +453,23 @@ export async function publishMessage(messageId: string) {
   const ref = mediaRef(src.telegram_chat_message_ref);
   const entities = entitiesOf(src.telegram_chat_message_ref);
   const poll = pollOf(src.telegram_chat_message_ref);
-  const [policy, notice] = await Promise.all([votePolicy(), noticeFor(src), waitForEarlier(src.source_update_id)]);
+  const [policy, notice, blocked] = await Promise.all([votePolicy(), noticeFor(src), likelyBlockedChats(messageId), waitForEarlier(src.source_update_id)]);
   const markup = poll
     ? { reply_markup: pollKeyboard(poll.options.length) }
     : votesEnabled(policy, ref?.media) ? { reply_markup: voteKeyboard() } : {};
-  const startedAt = Date.now();
-  for (let batch = 0; batch < 20 && Date.now() - startedAt < 25_000; batch++) {
-    const { data: rows, error: claimError } = await db.rpc("claim_private_deliveries_v2", { _message_id: messageId });
-    if (claimError) throw claimError;
-    if (!rows?.length) break;
-    let temporaryFailure = false;
-    await Promise.all(rows.map(async (row) => {
-      let patch: { status: string; sent_at?: string; telegram_message_id?: number; last_error: string | null };
+
+  const claim = () => db.rpc("claim_private_deliveries_v2", { _message_id: messageId });
+  type Claimed = NonNullable<Awaited<ReturnType<typeof claim>>["data"]>[number];
+  const gate = rateGate(28);
+  let temporaryFailure = false;
+
+  const sendRow = async (row: Claimed) => {
+    let patch: { status: string; sent_at?: string; telegram_message_id?: number; last_error: string | null };
+    if (blocked.has(row.chat_id)) {
+      patch = { status: "unreachable", last_error: "skipped: bot blocked by user (recent)" };
+    } else {
       try {
+        await gate();
         const sent = ref
           ? await tg<{ message_id: number }>("copyMessage", {
               chat_id: row.chat_id, from_chat_id: ref.chat_id, message_id: ref.message_id,
@@ -414,12 +484,34 @@ export async function publishMessage(messageId: string) {
         if (!permanent) temporaryFailure = true;
         patch = { status: permanent ? "unreachable" : "failed", last_error: e instanceof Error ? e.message.slice(0, 500) : "error" };
       }
-      const { error: saveError } = await db.from("telegram_deliveries").update(patch).eq("id", row.id);
-      if (saveError) throw saveError;
-    }));
-    // Jaribu tena ndani ya ombi hili kwa muda mfupi badala ya kusubiri Telegram irudie webhook.
-    if (temporaryFailure) await new Promise((r) => setTimeout(r, 1000));
+    }
+    const { error: saveError } = await db.from("telegram_deliveries").update(patch).eq("id", row.id);
+    if (saveError) throw saveError;
+  };
+
+  const startedAt = Date.now();
+  // Awamu 1: anza kutuma huku bado unachukua wapokeaji wengine (kinga: usitume safu moja mara mbili).
+  const seen = new Set<string>();
+  const inflight: Promise<void>[] = [];
+  for (let i = 0; i < 40 && Date.now() - startedAt < 15_000; i++) {
+    const { data: rows, error: claimError } = await claim();
+    if (claimError) throw claimError;
+    const fresh = (rows ?? []).filter((r) => !seen.has(String(r.id)));
+    if (!fresh.length) break;
+    for (const r of fresh) seen.add(String(r.id));
+    inflight.push(...fresh.map(sendRow));
   }
+  await Promise.all(inflight);
+  // Awamu 2: jaribu tena zilizoshindwa kwa muda mfupi.
+  for (let attempt = 0; attempt < 6 && Date.now() - startedAt < 25_000; attempt++) {
+    const { data: rows, error: claimError } = await claim();
+    if (claimError) throw claimError;
+    if (!rows?.length) break;
+    temporaryFailure = false;
+    await Promise.all(rows.map(sendRow));
+    if (temporaryFailure) await sleep(1000);
+  }
+
   const { data: source, error: sourceError } = await db.from("messages").select("member_id").eq("id", messageId).single();
   if (sourceError) throw sourceError;
   let pendingQuery = db.from("telegram_deliveries").select("id", { count: "exact", head: true }).eq("message_id", messageId);
@@ -512,6 +604,114 @@ async function noticeFor(msg: { body: string | null; reply_to_id: string | null 
   };
 }
 
+// ---- Majibu ya siri (Reply = ujumbe kwa mwenye ujumbe aliyejibiwa pekee) ----
+
+const PRIVATE_NOTICE = "🔒 <b>Jibu la siri</b>\n";
+
+type ReplyRoute =
+  | { kind: "public" }
+  | { kind: "unknown" }
+  | { kind: "private"; parentId: string; authorChat: number; authorLabel: string; parentMsg: { chat_id: number; message_id: number } };
+
+/**
+ * Hutambua mwenye ujumbe uliojibiwa.
+ * - nakala ya ujumbe wa wazi, au nakala ya jibu la siri lililotumwa kwa mtu huyu → "private" kwa mwenye ujumbe huo
+ * - ujumbe wake mwenyewe → "public"
+ * - vinginevyo → "unknown" (hatutumi, ili jibu la siri lisitoke hadharani kimakosa)
+ */
+async function resolveReplyRoute(memberId: string, chatId: number, replyMessageId: number): Promise<ReplyRoute> {
+  const db = await admin();
+  const { data: parentId, error } = await db.rpc("resolve_telegram_reply", { _member_id: memberId, _telegram_message_id: replyMessageId });
+  if (error) throw error;
+  let row: { id: string; sender_label: string; telegram_chat_message_ref: unknown } | null = null;
+  if (parentId) {
+    const { data } = await db.from("messages").select("id, sender_label, telegram_chat_message_ref").eq("id", parentId).maybeSingle();
+    row = data;
+  } else {
+    const { data } = await db.from("messages").select("id, sender_label, telegram_chat_message_ref")
+      .filter("telegram_chat_message_ref->private->>copy_id", "eq", String(replyMessageId))
+      .filter("telegram_chat_message_ref->private->>to_chat", "eq", String(chatId))
+      .limit(1).maybeSingle();
+    row = data;
+  }
+  if (!row) {
+    const { data: own } = await db.from("messages").select("id")
+      .filter("telegram_chat_message_ref->>message_id", "eq", String(replyMessageId))
+      .filter("telegram_chat_message_ref->>chat_id", "eq", String(chatId))
+      .limit(1).maybeSingle();
+    return own ? { kind: "public" } : { kind: "unknown" };
+  }
+  const parent = origRef(row.telegram_chat_message_ref);
+  if (!parent) return { kind: "unknown" };
+  if (parent.chat_id === chatId) return { kind: "public" };
+  return { kind: "private", parentId: row.id, authorChat: parent.chat_id, authorLabel: row.sender_label, parentMsg: parent };
+}
+
+/** Hutuma jibu la siri moja kwa moja kwa mwenye ujumbe (bila kupitia usambazaji kwa wote). */
+async function sendPrivateReply(args: {
+  updateId: number; memberId: string; senderLabel: string; chatId: number; messageId: number;
+  media: string | null; text: string; entities: TgEntity[]; to: Extract<ReplyRoute, { kind: "private" }>;
+}) {
+  const db = await admin();
+  const failToSender = (text: string) => tg("sendMessage", { chat_id: args.chatId, text, reply_parameters: { message_id: args.messageId, allow_sending_without_reply: true } }).catch(() => {});
+
+  const { data: target } = await db.from("members").select("status").eq("telegram_user_id", args.to.authorChat).maybeSingle();
+  if (!target || target.status !== "active") {
+    await failToSender("⚠️ Jibu halijatumwa: mpokeaji hapatikani kwa sasa.");
+    return;
+  }
+
+  const refBase = { message_id: args.messageId, chat_id: args.chatId, media: args.media, entities: args.entities };
+  const { error: upsertError } = await db.from("messages").upsert({
+    member_id: args.memberId, sender_label: args.senderLabel, kind: args.media === "photo" ? "image" : "text", body: args.text || null,
+    reply_to_id: args.to.parentId,
+    telegram_chat_message_ref: { ...refBase, private: { to_chat: args.to.authorChat, copy_id: null } },
+    source_update_id: args.updateId, moderation_status: "pending",
+    publication_status: "unpublished", processing_status: "published",
+  }, { onConflict: "source_update_id", ignoreDuplicates: true });
+  if (upsertError) throw upsertError;
+
+  const { data: row, error: rowError } = await db.from("messages").select("id, telegram_chat_message_ref").eq("source_update_id", args.updateId).single();
+  if (rowError) throw rowError;
+  // Kinga: usitume mara mbili Telegram ikirudia sasisho.
+  if ((row.telegram_chat_message_ref as { private?: { copy_id?: number | null } } | null)?.private?.copy_id) return;
+
+  const html = buildMessageHtml(
+    { sender_label: args.senderLabel, body: args.text || null, entities: args.entities, notice: PRIVATE_NOTICE },
+    false, args.media ? 900 : 4000,
+  );
+  const reply = { reply_parameters: { message_id: args.to.parentMsg.message_id, allow_sending_without_reply: true } };
+  let sent: { message_id: number };
+  try {
+    if (args.media === "sticker") {
+      await tg("sendMessage", { chat_id: args.to.authorChat, parse_mode: "HTML", text: `${PRIVATE_NOTICE}<blockquote>${escapeHtml(args.senderLabel)}</blockquote>`, ...reply });
+      sent = await tg<{ message_id: number }>("copyMessage", { chat_id: args.to.authorChat, from_chat_id: args.chatId, message_id: args.messageId });
+    } else if (args.media) {
+      sent = await tg<{ message_id: number }>("copyMessage", { chat_id: args.to.authorChat, from_chat_id: args.chatId, message_id: args.messageId, parse_mode: "HTML", caption: html, ...reply });
+    } else {
+      sent = await tg<{ message_id: number }>("sendMessage", { chat_id: args.to.authorChat, parse_mode: "HTML", text: html, ...reply });
+    }
+  } catch (e) {
+    if (e instanceof TelegramError && (e.status === 403 || e.status === 400)) {
+      log("warn", "private_reply_failed", { error: e.message });
+      await failToSender(e.status === 403 ? "⚠️ Jibu halijatumwa: mpokeaji hapatikani kwa sasa." : "⚠️ Jibu halijatumwa. Jaribu tena.");
+      return;
+    }
+    throw e;
+  }
+
+  const { error: saveError } = await db.from("messages")
+    .update({ telegram_chat_message_ref: { ...refBase, private: { to_chat: args.to.authorChat, copy_id: sent.message_id } } as never })
+    .eq("id", row.id);
+  if (saveError) throw saveError;
+
+  await tg("sendMessage", {
+    chat_id: args.chatId, parse_mode: "HTML", disable_notification: true,
+    text: `🔒 Imetumwa kwa <b>${escapeHtml(args.to.authorLabel)}</b> pekee.`,
+    reply_parameters: { message_id: args.messageId, allow_sending_without_reply: true },
+  }).catch(() => {});
+}
+
 /** Hubandika (pin) au kuondoa pin ya ujumbe kwenye chat ya kila mwanachama. Arifa zimezimwa kwenye chat binafsi. */
 async function pinEverywhere(messageId: string, action: "pin" | "unpin") {
   const db = await admin();
@@ -528,7 +728,7 @@ async function pinEverywhere(messageId: string, action: "pin" | "unpin") {
   }
   let done = 0;
   for (let i = 0; i < targets.length; i += 25) {
-    if (i > 0) await new Promise((r) => setTimeout(r, 1100));
+    if (i > 0) await sleep(1100);
     const results = await Promise.allSettled(targets.slice(i, i + 25).map((x) =>
       action === "pin"
         ? tg("pinChatMessage", { chat_id: x.chat_id, message_id: x.message_id, disable_notification: true })
@@ -577,12 +777,12 @@ function chunkLines(lines: string[]) {
 /** Hutuma vipande kimoja kimoja kwa pengo la sekunde ~1 (kikomo cha Telegram kwa chat moja). */
 async function sendChunks(chatId: number, chunks: string[]) {
   for (let i = 0; i < chunks.length; i++) {
-    if (i > 0) await new Promise((r) => setTimeout(r, 1100));
+    if (i > 0) await sleep(1100);
     await tg("sendMessage", { chat_id: chatId, text: chunks[i]!, parse_mode: "HTML", disable_notification: i > 0 });
   }
 }
 
-/** Hutuma ujumbe wa masaa 24 yaliyopita (hadi 100) kama vipande vichache. */
+/** Hutuma ujumbe wa masaa 24 yaliyopita (hadi 100) kama vipande vichache. Majibu ya siri hayajumuishwi. */
 async function sendHistory(chatId: number, userId: number) {
   const now = Date.now();
   if (now - (historyLast.get(userId) ?? 0) < 60_000) {
@@ -597,6 +797,7 @@ async function sendHistory(chatId: number, userId: number) {
     const { data, count, error } = await db.from("messages")
       .select("sender_label, body, created_at, telegram_chat_message_ref", { count: "exact" })
       .eq("processing_status", "published").gte("created_at", since)
+      .filter("telegram_chat_message_ref->>private", "is", null)
       .order("created_at", { ascending: false }).limit(100);
     if (error) throw error;
     const rows = (data ?? []).reverse();
@@ -615,7 +816,7 @@ async function sendHistory(chatId: number, userId: number) {
   }
 }
 
-/** /tafuta neno  au  /tafuta @A12 — hurudisha ujumbe 15 wa mwisho unaolingana. */
+/** /tafuta neno  au  /tafuta @A12 — hurudisha ujumbe 15 wa mwisho unaolingana. Majibu ya siri hayajumuishwi. */
 async function searchMessages(chatId: number, userId: number, query: string) {
   const byLabel = query.startsWith("@");
   const label = byLabel ? query.slice(1).trim() : "";
@@ -634,7 +835,8 @@ async function searchMessages(chatId: number, userId: number, query: string) {
     const db = await admin();
     let q = db.from("messages")
       .select("sender_label, body, created_at, telegram_chat_message_ref", { count: "exact" })
-      .eq("processing_status", "published");
+      .eq("processing_status", "published")
+      .filter("telegram_chat_message_ref->>private", "is", null);
     q = byLabel ? q.ilike("sender_label", label) : q.ilike("body", `%${query.replace(/[\\%_]/g, "\\$&")}%`);
     const { data, count, error } = await q.order("created_at", { ascending: false }).limit(15);
     if (error) throw error;
@@ -654,10 +856,12 @@ async function searchMessages(chatId: number, userId: number, query: string) {
   }
 }
 
-/** /uchunguzi (admin): ujumbe 5 wa mwisho, hali za utumaji na muda wa kufika. */
+/** /uchunguzi (admin): ujumbe 5 wa mwisho wa wazi, hali za utumaji na muda wa kufika. */
 async function sendDiagnostics(chatId: number) {
   const db = await admin();
-  const { data: msgs, error } = await db.from("messages").select("id, created_at").eq("processing_status", "published").order("created_at", { ascending: false }).limit(5);
+  const { data: msgs, error } = await db.from("messages").select("id, created_at").eq("processing_status", "published")
+    .filter("telegram_chat_message_ref->>private", "is", null)
+    .order("created_at", { ascending: false }).limit(5);
   if (error) throw error;
   if (!msgs?.length) {
     await tg("sendMessage", { chat_id: chatId, text: "Hakuna ujumbe wa kuchunguza bado." });
