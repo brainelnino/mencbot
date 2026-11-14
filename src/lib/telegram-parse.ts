@@ -57,6 +57,8 @@ export type Classified =
   | { kind: "admin_pin"; userId: number; chatId: number; action: "pin" | "unpin"; replyMessageId: number | null }
   | { kind: "admin_poll"; userId: number; chatId: number; action: "create" | "close"; raw: string; replyMessageId: number | null }
   | { kind: "admin_diag"; userId: number; chatId: number }
+  | { kind: "admin_announce"; userId: number; chatId: number; messageId: number; media: MediaType | null; raw: string }
+  | { kind: "announce_details"; userId: number; chatId: number; messageId: number; callbackId: string }
   | { kind: "poll_vote"; userId: number; chatId: number; messageId: number; option: number; callbackId: string }
   | { kind: "private_text"; userId: number; chatId: number; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
   | { kind: "private_media"; userId: number; chatId: number; media: MediaType; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
@@ -85,6 +87,9 @@ export function classifyUpdate(u: TgUpdate): Classified {
   if (cb) {
     if (cb.data === "h:24" && cb.message && cb.message.chat.type === "private") {
       return { kind: "history", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, callbackId: cb.id };
+    }
+    if (cb.data === "a:d" && cb.message && cb.message.chat.type === "private") {
+      return { kind: "announce_details", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, callbackId: cb.id };
     }
     const pv = /^p:([0-3])$/.exec(cb.data ?? "");
     if (pv?.[1] && cb.message && cb.message.chat.type === "private") {
@@ -117,12 +122,16 @@ export function classifyUpdate(u: TgUpdate): Classified {
     const pl = /^\/poll(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(text);
     if (pl) return { kind: "admin_poll", userId: m.from.id, chatId: m.chat.id, action: "create", raw: (pl[1] ?? "").trim().slice(0, 600), replyMessageId: null };
     if (/^\/(uchunguzi|diag)(?:@\w+)?\s*$/i.test(text)) return { kind: "admin_diag", userId: m.from.id, chatId: m.chat.id };
+    const an = /^\/tangazo(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(text);
+    if (an) return { kind: "admin_announce", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, media: null, raw: (an[1] ?? "").trim().slice(0, 4000) };
     const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
     if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), entities: normalizeEntities(m.entities, raw.length - raw.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     const media = detectMedia(m);
     if (media) {
       const cap = m.caption ?? "";
+      const ac = /^\s*\/tangazo(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(cap);
+      if (ac) return { kind: "admin_announce", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, media, raw: (ac[1] ?? "").trim().slice(0, 1024) };
       return { kind: "private_media", userId: m.from.id, chatId: m.chat.id, media, text: cap.trim().slice(0, 1000), entities: normalizeEntities(m.caption_entities, cap.length - cap.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     }
     return { kind: "private_other", userId: m.from.id, chatId: m.chat.id };
