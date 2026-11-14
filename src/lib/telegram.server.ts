@@ -100,6 +100,59 @@ function pollKeyboard(count: number, summary: Array<{ emoji: string; total: numb
   };
 }
 
+// ---- Matangazo (banner + orodha + kitufe cha View Details + kubandikwa kwa wote) ----
+
+function announceOf(v: unknown): { html: string; details: string } | null {
+  const a = (v as { announce?: { html?: unknown; details?: unknown } } | null)?.announce;
+  return a && typeof a.html === "string" ? { html: a.html, details: typeof a.details === "string" ? a.details : "" } : null;
+}
+
+/** Hugawa maandishi ya admin: kichwa, utangulizi, orodha (-), sanduku la mwisho (>), na maelezo baada ya ---. */
+function parseAnnouncement(raw: string) {
+  const parts = raw.split(/\n\s*-{3,}\s*(?:\n|$)/);
+  const main = parts[0] ?? "";
+  const details = parts.slice(1).join("\n").trim();
+  const lines = main.split("\n").map((l) => l.trim()).filter(Boolean);
+  const title = lines.shift() ?? "";
+  const isBullet = (l: string) => /^[-•*]\s+/.test(l);
+  const bullets = lines.filter(isBullet).map((l) => l.replace(/^[-•*]\s+/, ""));
+  const footer = lines.find((l) => l.startsWith(">"))?.replace(/^>\s*/, "") ?? "";
+  const intro = lines.filter((l) => !isBullet(l) && !l.startsWith(">"));
+  return { title, intro, bullets, footer, details };
+}
+
+function announceHtml(a: { title: string; intro: string[]; bullets: string[]; footer: string }) {
+  const head = `✅ <b><i>${escapeHtml(a.title)}</i></b>${a.intro.length ? `\n${a.intro.map(escapeHtml).join("\n")}` : ""}`;
+  const parts = ["📢 <b><i>Tangazo Jipya</i></b>", head];
+  if (a.bullets.length) parts.push(`<blockquote>⭐ <b>Mabadiliko Muhimu:</b></blockquote>\n${a.bullets.map((b) => `✅ ${escapeHtml(b)}`).join("\n")}`);
+  if (a.footer) parts.push(`<blockquote>🚀 <i>${escapeHtml(a.footer)}</i></blockquote>`);
+  return parts.join("\n\n");
+}
+
+/** Urefu wa maandishi yanayoonekana (bila tagi), kwa kikomo cha caption ya Telegram. */
+function plainLength(html: string) {
+  return Array.from(html.replace(/<[^>]*>/g, "").replace(/&(amp|lt|gt);/g, "x")).length;
+}
+
+const ANNOUNCE_USAGE = [
+  "📢 <b>Jinsi ya kutuma tangazo</b>",
+  "Tuma picha ya banner yenye maelezo (caption), au ujumbe wa maandishi, ukianza na /tangazo:",
+  "",
+  "<code>/tangazo Update Mpya!",
+  "Tumeongeza vipengele vipya 🎉",
+  "- Ujumbe wa Reply kuwa Private",
+  "- Uendeshaji wa haraka",
+  "&gt; Asante kwa kuwa sehemu ya familia yetu!",
+  "---",
+  "Maelezo kamili ya kitufe cha View Details</code>",
+  "",
+  "• Mstari wa kwanza ni kichwa",
+  "• Mistari ya <code>-</code> ni orodha ya ✅",
+  "• Mstari wa <code>&gt;</code> ni sanduku la mwisho",
+  "• Baada ya <code>---</code> ni maelezo ya kitufe cha View Details (hiari)",
+  "• Tangazo linabandikwa kwa wote kiotomatiki",
+].join("\n");
+
 /** Processes one verified update idempotently. */
 export async function handleUpdate(update: TgUpdate) {
   const db = await admin();
@@ -107,7 +160,7 @@ export async function handleUpdate(update: TgUpdate) {
 
   // Idempotency: claim the update_id. Duplicate deliveries of processed updates are skipped.
   // Aina mpya zinahifadhiwa kama "private_other" ili safu ya update_kind isikatae thamani mpya.
-  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "poll_vote" ? "private_other" : c.kind;
+  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "poll_vote" ? "private_other" : c.kind;
   const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: kindForDb });
   if (insErr) {
     if (insErr.code !== "23505") throw insErr;
@@ -159,6 +212,65 @@ export async function handleUpdate(update: TgUpdate) {
         if (slotError) throw slotError;
         if (!slot) { await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.noPermission }); break; }
         await sendDiagnostics(c.chatId);
+        break;
+      }
+      case "admin_announce": {
+        const { data: slot, error: slotError } = await db.rpc("get_telegram_admin_slot", { _tg_user_id: c.userId });
+        if (slotError) throw slotError;
+        if (!slot) { await tg("sendMessage", { chat_id: c.chatId, text: t.telegram.noPermission }); break; }
+        const parsed = parseAnnouncement(c.raw);
+        if (!parsed.title) { await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: ANNOUNCE_USAGE }); break; }
+        if (c.media && !["photo", "video", "animation"].includes(c.media)) {
+          await tg("sendMessage", { chat_id: c.chatId, text: "⚠️ Tumia picha, video au GIF kama banner." });
+          break;
+        }
+        const html = announceHtml(parsed);
+        const limit = c.media ? 1000 : 4000;
+        const size = plainLength(html);
+        if (size > limit) {
+          await tg("sendMessage", { chat_id: c.chatId, text: `⚠️ Tangazo ni refu mno (herufi ${size}, kikomo ${limit}${c.media ? " kwa picha" : ""}). Fupisha${c.media ? " au litume kama maandishi bila picha" : ""}.` });
+          break;
+        }
+        const plain = [parsed.title, ...parsed.bullets.map((b) => `• ${b}`)].join("\n");
+        const annRef = { ...(c.media ? { message_id: c.messageId, chat_id: c.chatId, media: c.media } : {}), announce: { html, details: parsed.details } };
+        const annRow = (member_id: string) => ({
+          member_id, sender_label: "📢 Tangazo", kind: (c.media === "photo" ? "image" : "text") as "image" | "text", body: plain, reply_to_id: null,
+          telegram_chat_message_ref: annRef as never,
+          source_update_id: update.update_id, moderation_status: "pending" as const,
+          publication_status: "unpublished" as const, processing_status: "awaiting_moderation" as const,
+        });
+        const { data: mem } = await db.from("members").select("id").eq("telegram_user_id", c.userId).maybeSingle();
+        const upsertOpts = { onConflict: "source_update_id", ignoreDuplicates: true };
+        let ins = await db.from("messages").upsert(annRow(null as unknown as string), upsertOpts);
+        if (ins.error && mem) ins = await db.from("messages").upsert(annRow(mem.id), upsertOpts);
+        if (ins.error) throw ins.error;
+        const { data: annMsg, error: annErr } = await db.from("messages").select("id").eq("source_update_id", update.update_id).single();
+        if (annErr) throw annErr;
+        await publishMessage(annMsg.id);
+        const res = await pinEverywhere(annMsg.id, "pin", false);
+        await tg("sendMessage", { chat_id: c.chatId, text: `📢 Tangazo limetumwa na kubandikwa kwa chat ${res.done} kati ya ${res.total}. Kuliondoa, jibu tangazo kisha andika /unpin.` });
+        break;
+      }
+      case "announce_details": {
+        const answer = (text?: string, alert = false) => tg("answerCallbackQuery", { callback_query_id: c.callbackId, ...(text ? { text, show_alert: alert } : {}) }).catch(() => {});
+        const { data: mem } = await db.from("members").select("id").eq("telegram_user_id", c.userId).maybeSingle();
+        if (!mem) { await answer("Tuma /start kwanza."); status = "ignored"; break; }
+        const { data: target } = await db.from("telegram_deliveries").select("message_id").eq("member_id", mem.id).eq("telegram_message_id", c.messageId).eq("status", "sent").maybeSingle();
+        if (!target) { await answer("Maelezo hayapatikani."); status = "ignored"; break; }
+        const { data: message, error: messageError } = await db.from("messages").select("telegram_chat_message_ref").eq("id", target.message_id).single();
+        if (messageError) throw messageError;
+        const ann = announceOf(message.telegram_chat_message_ref);
+        if (!ann || !ann.details) { await answer("Hakuna maelezo zaidi."); status = "ignored"; break; }
+        if (ann.details.length <= 190) {
+          await answer(ann.details, true);
+        } else {
+          await answer();
+          await tg("sendMessage", {
+            chat_id: c.chatId, parse_mode: "HTML",
+            text: `📋 <b>Maelezo kamili</b>\n\n${escapeHtml(ann.details.slice(0, 3800))}`,
+            reply_parameters: { message_id: c.messageId, allow_sending_without_reply: true },
+          });
+        }
         break;
       }
       case "admin_pin": {
@@ -453,10 +565,13 @@ export async function publishMessage(messageId: string) {
   const ref = mediaRef(src.telegram_chat_message_ref);
   const entities = entitiesOf(src.telegram_chat_message_ref);
   const poll = pollOf(src.telegram_chat_message_ref);
+  const announce = announceOf(src.telegram_chat_message_ref);
   const [policy, notice, blocked] = await Promise.all([votePolicy(), noticeFor(src), likelyBlockedChats(messageId), waitForEarlier(src.source_update_id)]);
-  const markup = poll
-    ? { reply_markup: pollKeyboard(poll.options.length) }
-    : votesEnabled(policy, ref?.media) ? { reply_markup: voteKeyboard() } : {};
+  const markup = announce
+    ? (announce.details ? { reply_markup: { inline_keyboard: [[{ text: "📋 View Details", callback_data: "a:d" }]] } } : {})
+    : poll
+      ? { reply_markup: pollKeyboard(poll.options.length) }
+      : votesEnabled(policy, ref?.media) ? { reply_markup: voteKeyboard() } : {};
 
   const claim = () => db.rpc("claim_private_deliveries_v2", { _message_id: messageId });
   type Claimed = NonNullable<Awaited<ReturnType<typeof claim>>["data"]>[number];
@@ -473,11 +588,13 @@ export async function publishMessage(messageId: string) {
         const sent = ref
           ? await tg<{ message_id: number }>("copyMessage", {
               chat_id: row.chat_id, from_chat_id: ref.chat_id, message_id: ref.message_id,
-              ...(ref.media === "sticker" ? {} : { parse_mode: "HTML", caption: buildMessageHtml({ ...row, entities, notice: notice(row.chat_id) }, !row.reply_message_id, 900) }),
-              ...(row.reply_message_id ? { reply_parameters: { message_id: row.reply_message_id, allow_sending_without_reply: true } } : {}),
+              ...(ref.media === "sticker" ? {} : { parse_mode: "HTML", caption: announce ? announce.html : buildMessageHtml({ ...row, entities, notice: notice(row.chat_id) }, !row.reply_message_id, 900) }),
+              ...(!announce && row.reply_message_id ? { reply_parameters: { message_id: row.reply_message_id, allow_sending_without_reply: true } } : {}),
               ...markup,
             })
-          : await tg<{ message_id: number }>("sendMessage", { ...telegramMessagePayload({ ...row, entities, notice: notice(row.chat_id) }), ...markup });
+          : await tg<{ message_id: number }>("sendMessage", announce
+              ? { chat_id: row.chat_id, parse_mode: "HTML", text: announce.html, ...markup }
+              : { ...telegramMessagePayload({ ...row, entities, notice: notice(row.chat_id) }), ...markup });
         patch = { status: "sent", sent_at: new Date().toISOString(), telegram_message_id: sent.message_id, last_error: null };
       } catch (e) {
         const permanent = e instanceof TelegramError && (e.status === 403 || e.status === 400);
@@ -535,6 +652,8 @@ async function syncReactionEdits(messageId: string) {
   if (summaryError) throw summaryError;
   const { data: msg, error: msgError } = await db.from("messages").select("sender_label, body, reply_to_id, telegram_chat_message_ref").eq("id", messageId).single();
   if (msgError) throw msgError;
+  // Matangazo yana muundo wake maalum; usiyaandike upya.
+  if (announceOf(msg.telegram_chat_message_ref)) return;
   let reply: { reply_label: string; reply_body: string | null } | undefined;
   if (msg.reply_to_id) {
     const { data: parent } = await db.from("messages").select("sender_label, body").eq("id", msg.reply_to_id).maybeSingle();
@@ -727,14 +846,14 @@ async function sendPrivateReply(args: {
 }
 
 /** Hubandika (pin) au kuondoa pin ya ujumbe kwenye chat ya kila mwanachama. Arifa zimezimwa kwenye chat binafsi. */
-async function pinEverywhere(messageId: string, action: "pin" | "unpin") {
+async function pinEverywhere(messageId: string, action: "pin" | "unpin", includeOwn = true) {
   const db = await admin();
   const { data: msg, error: msgError } = await db.from("messages").select("telegram_chat_message_ref").eq("id", messageId).single();
   if (msgError) throw msgError;
   const { data: deliveries, error: delError } = await db.from("telegram_deliveries").select("telegram_message_id, members(telegram_user_id)").eq("message_id", messageId).eq("status", "sent");
   if (delError) throw delError;
   const targets: Array<{ chat_id: number; message_id: number }> = [];
-  const own = origRef(msg.telegram_chat_message_ref);
+  const own = includeOwn ? origRef(msg.telegram_chat_message_ref) : null;
   if (own) targets.push(own);
   for (const d of deliveries ?? []) {
     const chat = (d.members as { telegram_user_id: number } | null)?.telegram_user_id;
