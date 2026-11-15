@@ -150,8 +150,16 @@ const ANNOUNCE_USAGE = [
   "• Mistari ya <code>-</code> ni orodha ya ✅",
   "• Mstari wa <code>&gt;</code> ni sanduku la mwisho",
   "• Baada ya <code>---</code> ni maelezo ya kitufe cha View Details (hiari)",
-  "• Tangazo linabandikwa kwa wote kiotomatiki",
+  "• Tangazo linabandikwa kwa wote kiotomatiki, na la awali linaondolewa",
 ].join("\n");
+
+// Majibu ya mzaha kwa command isiyojulikana (haisambazwi kwa wengine).
+const RIP_LINES = [
+  "🪦 <b>R.I.P this command</b>",
+  "⚰️ <b>R.I.P this command</b> — ilizikwa bila kuzaliwa",
+  "💀 <b>R.I.P this command</b> — mfumo haikuijua",
+  "🪦 <b>R.I.P this command</b> — 404, haipo",
+];
 
 /** Processes one verified update idempotently. */
 export async function handleUpdate(update: TgUpdate) {
@@ -160,7 +168,7 @@ export async function handleUpdate(update: TgUpdate) {
 
   // Idempotency: claim the update_id. Duplicate deliveries of processed updates are skipped.
   // Aina mpya zinahifadhiwa kama "private_other" ili safu ya update_kind isikatae thamani mpya.
-  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "poll_vote" ? "private_other" : c.kind;
+  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "unknown_command" || c.kind === "poll_vote" ? "private_other" : c.kind;
   const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: kindForDb });
   if (insErr) {
     if (insErr.code !== "23505") throw insErr;
@@ -189,6 +197,17 @@ export async function handleUpdate(update: TgUpdate) {
         await tg("sendMessage", { chat_id: c.chatId, text: row.is_new ? `Karibu ${await brandName()} 🇹🇿\n${row.label}` : t.telegram.welcomeBack(row.label) });
         if (row.is_new) await tg("sendMessage", { chat_id: c.chatId, text: "📜 Unataka kuona mazungumzo ya masaa 24 yaliyopita? Unaweza pia kuandika /historia wakati wowote.", reply_markup: { inline_keyboard: [[{ text: "📜 Ona ya masaa 24", callback_data: "h:24" }]] } });
         log("info", "registered", { is_new: row.is_new });
+        break;
+      }
+      case "unknown_command": {
+        // Haisambazwi kwa mtu yeyote; mtumaji anapata jibu la mzaha tu.
+        const line = RIP_LINES[Math.floor(Math.random() * RIP_LINES.length)]!;
+        await tg("sendMessage", {
+          chat_id: c.chatId, parse_mode: "HTML",
+          text: `${line}\n\n<code>/${escapeHtml(c.command)}</code> haipo, kwa hiyo haikutumwa kwa mtu yeyote.\nZilizopo: /historia · /tafuta`,
+          reply_parameters: { message_id: c.messageId, allow_sending_without_reply: true },
+        });
+        status = "ignored";
         break;
       }
       case "history": {
@@ -246,9 +265,16 @@ export async function handleUpdate(update: TgUpdate) {
         if (ins.error) throw ins.error;
         const { data: annMsg, error: annErr } = await db.from("messages").select("id").eq("source_update_id", update.update_id).single();
         if (annErr) throw annErr;
+        // Tangazo la awali lililobandikwa litaondolewa pin tangazo jipya likibandikwa.
+        const { data: prevAnn } = await db.from("messages").select("id")
+          .eq("processing_status", "published")
+          .filter("telegram_chat_message_ref->>announce", "not.is", null)
+          .neq("id", annMsg.id)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
         await publishMessage(annMsg.id);
+        if (prevAnn) await pinEverywhere(prevAnn.id, "unpin", false);
         const res = await pinEverywhere(annMsg.id, "pin", false);
-        await tg("sendMessage", { chat_id: c.chatId, text: `📢 Tangazo limetumwa na kubandikwa kwa chat ${res.done} kati ya ${res.total}. Kuliondoa, jibu tangazo kisha andika /unpin.` });
+        await tg("sendMessage", { chat_id: c.chatId, text: `📢 Tangazo limetumwa na kubandikwa kwa chat ${res.done} kati ya ${res.total}.${prevAnn ? " Tangazo la awali limeondolewa kwenye pin." : ""} Kuliondoa, jibu tangazo kisha andika /unpin.` });
         break;
       }
       case "announce_details": {
