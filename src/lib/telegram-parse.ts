@@ -59,6 +59,7 @@ export type Classified =
   | { kind: "admin_diag"; userId: number; chatId: number }
   | { kind: "admin_announce"; userId: number; chatId: number; messageId: number; media: MediaType | null; raw: string }
   | { kind: "announce_details"; userId: number; chatId: number; messageId: number; callbackId: string }
+  | { kind: "unknown_command"; userId: number; chatId: number; messageId: number; command: string }
   | { kind: "poll_vote"; userId: number; chatId: number; messageId: number; option: number; callbackId: string }
   | { kind: "private_text"; userId: number; chatId: number; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
   | { kind: "private_media"; userId: number; chatId: number; media: MediaType; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
@@ -126,12 +127,17 @@ export function classifyUpdate(u: TgUpdate): Classified {
     if (an) return { kind: "admin_announce", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, media: null, raw: (an[1] ?? "").trim().slice(0, 4000) };
     const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
+    // Ujumbe unaoanza na /neno lisilojulikana: haupaswi kusambazwa kwa wengine.
+    const unk = /^\/([A-Za-z0-9_]{1,32})(?:@\w+)?(?:\s|$)/.exec(text);
+    if (unk?.[1]) return { kind: "unknown_command", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, command: unk[1] };
     if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), entities: normalizeEntities(m.entities, raw.length - raw.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     const media = detectMedia(m);
     if (media) {
       const cap = m.caption ?? "";
       const ac = /^\s*\/tangazo(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(cap);
       if (ac) return { kind: "admin_announce", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, media, raw: (ac[1] ?? "").trim().slice(0, 1024) };
+      const uc = /^\s*\/([A-Za-z0-9_]{1,32})(?:@\w+)?(?:\s|$)/.exec(cap);
+      if (uc?.[1]) return { kind: "unknown_command", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, command: uc[1] };
       return { kind: "private_media", userId: m.from.id, chatId: m.chat.id, media, text: cap.trim().slice(0, 1000), entities: normalizeEntities(m.caption_entities, cap.length - cap.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     }
     return { kind: "private_other", userId: m.from.id, chatId: m.chat.id };
