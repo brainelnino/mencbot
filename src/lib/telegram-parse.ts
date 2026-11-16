@@ -116,6 +116,9 @@ export function classifyUpdate(u: TgUpdate): Classified {
   if (m.chat.type === "private") {
     if (!m.from) return { kind: "ignored", reason: "no_sender" };
     if (/^\/start(@\w+)?(\s|$)/.test(text)) return { kind: "start", userId: m.from.id, chatId: m.chat.id };
+    const dn = /^\/(jina|name)(?:@\w+)?\s+([\s\S]+)$/i.exec(text);
+    if (dn?.[2]) return { kind: "set_display_name", userId: m.from.id, chatId: m.chat.id, displayName: dn[2].trim().slice(0, 100) };
+    if (/^\/(utambulisho|id)(?:@\w+)?\s*$/i.test(text)) return { kind: "identity", userId: m.from.id, chatId: m.chat.id };
     if (/^\/(historia|history)(@\w+)?\s*$/i.test(text)) return { kind: "history", userId: m.from.id, chatId: m.chat.id, messageId: null, callbackId: null };
     const sq = /^\/(tafuta|search)(?:@\w+)?(?:\s+([\s\S]+))?$/i.exec(text);
     if (sq) return { kind: "search", userId: m.from.id, chatId: m.chat.id, query: (sq[2] ?? "").trim().slice(0, 100) };
