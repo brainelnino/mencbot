@@ -44,7 +44,7 @@ BEGIN
 
   UPDATE public.members SET display_name = clean_name, display_name_set_at = now()
     WHERE id = mid;
-  UPDATE public.messages msg SET sender_label = clean_name || ' · ' || pi.label
+  UPDATE public.messages msg SET sender_label = clean_name
     FROM public.public_identities pi WHERE msg.member_id = mid AND pi.member_id = mid;
 
   RETURN QUERY
@@ -93,7 +93,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
       WHEN m.member_id IS NOT NULL AND coalesce((SELECT (value #>> '{}')::boolean
         FROM public.system_settings WHERE key = 'display_names_enabled'), true)
         AND mem.display_name_visible AND nullif(trim(mem.display_name), '') IS NOT NULL
-      THEN mem.display_name || ' · ' || coalesce(pi.label, m.sender_label)
+      THEN mem.display_name
       WHEN m.member_id IS NOT NULL THEN coalesce(pi.label, m.sender_label)
       ELSE m.sender_label
     END,
@@ -114,7 +114,7 @@ GRANT EXECUTE ON FUNCTION public.get_public_messages(int) TO anon, authenticated
 
 -- Keep stored message labels in sync for newly delivered Telegram copies too.
 UPDATE public.messages msg
-SET sender_label = mem.display_name || ' · ' || pi.label
+SET sender_label = mem.display_name
 FROM public.members mem
 JOIN public.public_identities pi ON pi.member_id = mem.id
 WHERE msg.member_id = mem.id
@@ -131,7 +131,7 @@ BEGIN
     ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=now();
   UPDATE public.messages msg SET sender_label =
     CASE WHEN _enabled AND mem.display_name_visible AND mem.display_name IS NOT NULL
-      THEN mem.display_name || ' · ' || pi.label ELSE pi.label END
+      THEN mem.display_name ELSE pi.label END
   FROM public.members mem JOIN public.public_identities pi ON pi.member_id=mem.id
   WHERE msg.member_id=mem.id;
   INSERT INTO public.audit_events(action,target_type,details)
@@ -151,7 +151,7 @@ BEGIN
     FROM public.system_settings WHERE key='display_names_enabled';
   UPDATE public.messages msg SET sender_label =
     CASE WHEN coalesce(enabled,true) AND _visible AND mem.display_name IS NOT NULL
-      THEN mem.display_name || ' · ' || pi.label ELSE pi.label END
+      THEN mem.display_name ELSE pi.label END
   FROM public.members mem JOIN public.public_identities pi ON pi.member_id=mem.id
   WHERE msg.member_id=mid AND mem.id=mid;
   INSERT INTO public.audit_events(action,target_type,target_id,details)
