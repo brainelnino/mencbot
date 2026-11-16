@@ -52,6 +52,15 @@ export function normalizeEntities(list: unknown, lead = 0): TgEntity[] {
 
 export type Classified =
   | { kind: "start"; userId: number; chatId: number }
+  | { kind: "history"; userId: number; chatId: number; messageId: number | null; callbackId: string | null }
+  | { kind: "search"; userId: number; chatId: number; query: string }
+  | { kind: "admin_pin"; userId: number; chatId: number; action: "pin" | "unpin"; replyMessageId: number | null }
+  | { kind: "admin_poll"; userId: number; chatId: number; action: "create" | "close"; raw: string; replyMessageId: number | null }
+  | { kind: "admin_diag"; userId: number; chatId: number }
+  | { kind: "admin_announce"; userId: number; chatId: number; messageId: number; media: MediaType | null; raw: string }
+  | { kind: "announce_details"; userId: number; chatId: number; messageId: number; callbackId: string }
+  | { kind: "unknown_command"; userId: number; chatId: number; messageId: number; command: string }
+  | { kind: "poll_vote"; userId: number; chatId: number; messageId: number; option: number; callbackId: string }
   | { kind: "private_text"; userId: number; chatId: number; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
   | { kind: "private_media"; userId: number; chatId: number; media: MediaType; text: string; entities: TgEntity[]; messageId: number; replyMessageId: number | null }
   | { kind: "private_other"; userId: number; chatId: number }
@@ -77,6 +86,16 @@ function detectMedia(m: NonNullable<TgUpdate["message"]>): MediaType | null {
 export function classifyUpdate(u: TgUpdate): Classified {
   const cb = u.callback_query;
   if (cb) {
+    if (cb.data === "h:24" && cb.message && cb.message.chat.type === "private") {
+      return { kind: "history", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, callbackId: cb.id };
+    }
+    if (cb.data === "a:d" && cb.message && cb.message.chat.type === "private") {
+      return { kind: "announce_details", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, callbackId: cb.id };
+    }
+    const pv = /^p:([0-3])$/.exec(cb.data ?? "");
+    if (pv?.[1] && cb.message && cb.message.chat.type === "private") {
+      return { kind: "poll_vote", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, option: Number(pv[1]), callbackId: cb.id };
+    }
     const v = /^v:(✅|❌)$/.exec(cb.data ?? "");
     if (!v?.[1] || !cb.message || cb.message.chat.type !== "private") return { kind: "ignored", reason: "callback_scope" };
     return { kind: "vote", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, emoji: v[1], callbackId: cb.id };
@@ -95,12 +114,30 @@ export function classifyUpdate(u: TgUpdate): Classified {
   if (m.chat.type === "private") {
     if (!m.from) return { kind: "ignored", reason: "no_sender" };
     if (/^\/start(@\w+)?(\s|$)/.test(text)) return { kind: "start", userId: m.from.id, chatId: m.chat.id };
+    if (/^\/(historia|history)(@\w+)?\s*$/i.test(text)) return { kind: "history", userId: m.from.id, chatId: m.chat.id, messageId: null, callbackId: null };
+    const sq = /^\/(tafuta|search)(?:@\w+)?(?:\s+([\s\S]+))?$/i.exec(text);
+    if (sq) return { kind: "search", userId: m.from.id, chatId: m.chat.id, query: (sq[2] ?? "").trim().slice(0, 100) };
+    const pin = /^\/(pin|unpin)(?:@\w+)?\s*$/i.exec(text);
+    if (pin?.[1]) return { kind: "admin_pin", userId: m.from.id, chatId: m.chat.id, action: pin[1].toLowerCase() as "pin" | "unpin", replyMessageId: m.reply_to_message?.message_id ?? null };
+    if (/^\/pollfunga(?:@\w+)?\s*$/i.test(text)) return { kind: "admin_poll", userId: m.from.id, chatId: m.chat.id, action: "close", raw: "", replyMessageId: m.reply_to_message?.message_id ?? null };
+    const pl = /^\/poll(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(text);
+    if (pl) return { kind: "admin_poll", userId: m.from.id, chatId: m.chat.id, action: "create", raw: (pl[1] ?? "").trim().slice(0, 600), replyMessageId: null };
+    if (/^\/(uchunguzi|diag)(?:@\w+)?\s*$/i.test(text)) return { kind: "admin_diag", userId: m.from.id, chatId: m.chat.id };
+    const an = /^\/tangazo(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(text);
+    if (an) return { kind: "admin_announce", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, media: null, raw: (an[1] ?? "").trim().slice(0, 4000) };
     const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
+    // Ujumbe unaoanza na /neno lisilojulikana: haupaswi kusambazwa kwa wengine.
+    const unk = /^\/([A-Za-z0-9_]{1,32})(?:@\w+)?(?:\s|$)/.exec(text);
+    if (unk?.[1]) return { kind: "unknown_command", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, command: unk[1] };
     if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), entities: normalizeEntities(m.entities, raw.length - raw.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     const media = detectMedia(m);
     if (media) {
       const cap = m.caption ?? "";
+      const ac = /^\s*\/tangazo(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(cap);
+      if (ac) return { kind: "admin_announce", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, media, raw: (ac[1] ?? "").trim().slice(0, 1024) };
+      const uc = /^\s*\/([A-Za-z0-9_]{1,32})(?:@\w+)?(?:\s|$)/.exec(cap);
+      if (uc?.[1]) return { kind: "unknown_command", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, command: uc[1] };
       return { kind: "private_media", userId: m.from.id, chatId: m.chat.id, media, text: cap.trim().slice(0, 1000), entities: normalizeEntities(m.caption_entities, cap.length - cap.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     }
     return { kind: "private_other", userId: m.from.id, chatId: m.chat.id };
