@@ -22,7 +22,7 @@ DECLARE
   mid uuid;
   enabled boolean;
 BEGIN
-  clean_name := regexp_replace(trim(coalesce(_display_name, '')), '\s+', ' ', 'g');
+  clean_name := regexp_replace(trim(coalesce(_display_name, '')), '[[:space:]]+', ' ', 'g');
   IF char_length(clean_name) NOT BETWEEN 2 AND 24
      OR clean_name ~ '[[:cntrl:]<>]' THEN
     RAISE EXCEPTION 'Jina liwe herufi 2 hadi 24; alama za HTML haziruhusiwi';
