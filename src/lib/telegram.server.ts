@@ -195,6 +195,7 @@ export async function handleUpdate(update: TgUpdate) {
         // Mtu aliyezuia bot kisha akarudi kwa /start anaanza kupokea ujumbe tena.
         await db.from("members").update({ last_active_at: new Date().toISOString() }).eq("telegram_user_id", c.userId);
         await tg("sendMessage", { chat_id: c.chatId, text: row.is_new ? `Karibu ${await brandName()} 🇹🇿\n${row.label}` : t.telegram.welcomeBack(row.label) });
+        await tg("sendMessage", { chat_id: c.chatId, text: "🪪 Kuona utambulisho wako andika /utambulisho. Ukiamua kutumia jina unalolichagua mwenyewe, andika /jina JinaLako (mara moja tu)." });
         if (row.is_new) await tg("sendMessage", { chat_id: c.chatId, text: "📜 Unataka kuona mazungumzo ya masaa 24 yaliyopita? Unaweza pia kuandika /historia wakati wowote.", reply_markup: { inline_keyboard: [[{ text: "📜 Ona ya masaa 24", callback_data: "h:24" }]] } });
         log("info", "registered", { is_new: row.is_new });
         break;
@@ -205,7 +206,6 @@ export async function handleUpdate(update: TgUpdate) {
           await tg("sendMessage", { chat_id: c.chatId, text: `⚠️ ${error.message}` });
           break;
         }
-        const label = data?.[0]?.identity_label;
         await tg("sendMessage", { chat_id: c.chatId, text: `✅ Jina lako limehifadhiwa.\n${c.displayName}\n\nKumbuka: jina linaweza kuwekwa mara moja tu. Unaweza kutumia /utambulisho kuona utambulisho wako.` });
         break;
       }
