@@ -13,6 +13,11 @@ describe("telegram parsing", () => {
     expect(classifyUpdate(priv("/zuia 11"))).toMatchObject({ kind: "admin_command", command: "zuia", label: "11", userId: 42 });
     expect(classifyUpdate(priv("/rudisha C"))).toMatchObject({ kind: "admin_command", command: "rudisha", label: "C" });
   });
+  it("recognises member display-name and identity commands privately", () => {
+    expect(classifyUpdate(priv("/jina Mgeni")).kind).toBe("set_display_name");
+    expect(classifyUpdate(priv("/jina Mgeni"))).toMatchObject({ displayName: "Mgeni", userId: 42 });
+    expect(classifyUpdate(priv("/utambulisho")).kind).toBe("identity");
+  });
   it("recognises /start in a private chat", () => expect(classifyUpdate(priv("/start")).kind).toBe("start"));
   it("treats other private text as a message for review", () => expect(classifyUpdate(priv("Habari")).kind).toBe("private_text"));
   it("ignores ordinary group messages", () =>

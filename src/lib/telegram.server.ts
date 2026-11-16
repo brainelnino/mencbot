@@ -168,7 +168,7 @@ export async function handleUpdate(update: TgUpdate) {
 
   // Idempotency: claim the update_id. Duplicate deliveries of processed updates are skipped.
   // Aina mpya zinahifadhiwa kama "private_other" ili safu ya update_kind isikatae thamani mpya.
-  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "unknown_command" || c.kind === "poll_vote" ? "private_other" : c.kind;
+  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "unknown_command" || c.kind === "poll_vote" || c.kind === "set_display_name" || c.kind === "identity" ? "private_other" : c.kind;
   const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: kindForDb });
   if (insErr) {
     if (insErr.code !== "23505") throw insErr;
@@ -195,8 +195,28 @@ export async function handleUpdate(update: TgUpdate) {
         // Mtu aliyezuia bot kisha akarudi kwa /start anaanza kupokea ujumbe tena.
         await db.from("members").update({ last_active_at: new Date().toISOString() }).eq("telegram_user_id", c.userId);
         await tg("sendMessage", { chat_id: c.chatId, text: row.is_new ? `Karibu ${await brandName()} 🇹🇿\n${row.label}` : t.telegram.welcomeBack(row.label) });
+        await tg("sendMessage", { chat_id: c.chatId, text: "🪪 Kuona utambulisho wako andika /utambulisho. Ukiamua kutumia jina unalolichagua mwenyewe, andika /jina JinaLako (mara moja tu)." });
         if (row.is_new) await tg("sendMessage", { chat_id: c.chatId, text: "📜 Unataka kuona mazungumzo ya masaa 24 yaliyopita? Unaweza pia kuandika /historia wakati wowote.", reply_markup: { inline_keyboard: [[{ text: "📜 Ona ya masaa 24", callback_data: "h:24" }]] } });
         log("info", "registered", { is_new: row.is_new });
+        break;
+      }
+      case "set_display_name": {
+        const { data, error } = await db.rpc("set_member_display_name", { _tg_user_id: c.userId, _display_name: c.displayName });
+        if (error) {
+          await tg("sendMessage", { chat_id: c.chatId, text: `⚠️ ${error.message}` });
+          break;
+        }
+        await tg("sendMessage", { chat_id: c.chatId, text: `✅ Jina lako limehifadhiwa.\n${c.displayName}\n\nKumbuka: jina linaweza kuwekwa mara moja tu. Unaweza kutumia /utambulisho kuona utambulisho wako.` });
+        break;
+      }
+      case "identity": {
+        const { data: mem } = await db.from("members").select("id,display_name,display_name_set_at,display_name_visible,public_identities(label)").eq("telegram_user_id", c.userId).maybeSingle();
+        if (!mem) { await tg("sendMessage", { chat_id: c.chatId, text: "Tuma /start kwanza ili kujisajili." }); break; }
+        const label = (mem.public_identities as { label: string } | null)?.label ?? "Haijapatikana";
+        const { data: setting } = await db.from("system_settings").select("value").eq("key", "display_names_enabled").maybeSingle();
+        const enabled = setting?.value !== false;
+        const visibleName = enabled && mem.display_name_visible && mem.display_name ? mem.display_name : null;
+        await tg("sendMessage", { chat_id: c.chatId, text: `🪪 Utambulisho wako\n${visibleName ? `${visibleName}` : label}${mem.display_name_set_at ? "\nJina: tayari limewekwa" : "\nUnaweza kuweka jina mara moja kwa /jina JinaLako"}` });
         break;
       }
       case "unknown_command": {

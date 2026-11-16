@@ -379,6 +379,9 @@ export type Database = {
       members: {
         Row: {
           can_send_restricted: boolean
+          display_name: string | null
+          display_name_set_at: string | null
+          display_name_visible: boolean
           id: string
           last_active_at: string | null
           registered_at: string
@@ -388,6 +391,9 @@ export type Database = {
         }
         Insert: {
           can_send_restricted?: boolean
+          display_name?: string | null
+          display_name_set_at?: string | null
+          display_name_visible?: boolean
           id?: string
           last_active_at?: string | null
           registered_at?: string
@@ -1384,6 +1390,9 @@ export type Database = {
         Args: { _bot: string; _suspended: boolean }
         Returns: undefined
       }
+      set_member_display_name: { Args: { _display_name: string; _tg_user_id: number }; Returns: { identity_label: string }[] }
+      owner_set_display_names_enabled: { Args: { _enabled: boolean }; Returns: undefined }
+      owner_set_member_name_visible: { Args: { _label: string; _visible: boolean }; Returns: undefined }
       set_member_exempt: {
         Args: { _exempt: boolean; _member_id: string }
         Returns: undefined
