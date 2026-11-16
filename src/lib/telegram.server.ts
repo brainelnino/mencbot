@@ -216,7 +216,7 @@ export async function handleUpdate(update: TgUpdate) {
         const { data: setting } = await db.from("system_settings").select("value").eq("key", "display_names_enabled").maybeSingle();
         const enabled = setting?.value !== false;
         const visibleName = enabled && mem.display_name_visible && mem.display_name ? mem.display_name : null;
-        await tg("sendMessage", { chat_id: c.chatId, text: `🪪 Utambulisho wako\n${visibleName ? `${visibleName} · ${label}` : label}${mem.display_name_set_at ? "\nJina: tayari limewekwa" : "\nUnaweza kuweka jina mara moja kwa /jina JinaLako"}` });
+        await tg("sendMessage", { chat_id: c.chatId, text: `🪪 Utambulisho wako\n${visibleName ? `${visibleName}` : label}${mem.display_name_set_at ? "\nJina: tayari limewekwa" : "\nUnaweza kuweka jina mara moja kwa /jina JinaLako"}` });
         break;
       }
       case "unknown_command": {
