@@ -52,6 +52,8 @@ export function normalizeEntities(list: unknown, lead = 0): TgEntity[] {
 
 export type Classified =
   | { kind: "start"; userId: number; chatId: number }
+  | { kind: "set_display_name"; userId: number; chatId: number; displayName: string }
+  | { kind: "identity"; userId: number; chatId: number }
   | { kind: "history"; userId: number; chatId: number; messageId: number | null; callbackId: string | null }
   | { kind: "search"; userId: number; chatId: number; query: string }
   | { kind: "admin_pin"; userId: number; chatId: number; action: "pin" | "unpin"; replyMessageId: number | null }
