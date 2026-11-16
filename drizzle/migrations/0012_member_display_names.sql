@@ -157,3 +157,20 @@ BEGIN
   INSERT INTO public.audit_events(action,target_type,target_id,details)
     VALUES ('member.display_name_visibility','member',_label,jsonb_build_object('visible',_visible));
 END $$;
+
+-- Enforce protected identity fields even though authenticated admins have
+-- broad UPDATE rights on members for unrelated moderation settings.
+CREATE OR REPLACE FUNCTION public.guard_member_display_name_fields()
+RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$
+BEGIN
+  IF coalesce(auth.role(),'') <> 'service_role'
+     AND (NEW.display_name IS DISTINCT FROM OLD.display_name
+       OR NEW.display_name_set_at IS DISTINCT FROM OLD.display_name_set_at
+       OR NEW.display_name_visible IS DISTINCT FROM OLD.display_name_visible) THEN
+    RAISE EXCEPTION 'Tumia vitendo maalumu vya utambulisho';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER trg_guard_member_display_name_fields
+BEFORE UPDATE ON public.members
+FOR EACH ROW EXECUTE FUNCTION public.guard_member_display_name_fields();
