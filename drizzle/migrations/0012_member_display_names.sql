@@ -109,3 +109,49 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
   LIMIT least(greatest(_limit, 1), 200)
 $$;
 GRANT EXECUTE ON FUNCTION public.get_public_messages(int) TO anon, authenticated;
+
+-- Keep stored message labels in sync for newly delivered Telegram copies too.
+UPDATE public.messages msg
+SET sender_label = mem.display_name || ' · ' || pi.label
+FROM public.members mem
+JOIN public.public_identities pi ON pi.member_id = mem.id
+WHERE msg.member_id = mem.id
+  AND mem.display_name IS NOT NULL
+  AND mem.display_name_visible
+  AND coalesce((SELECT (value #>> '{}')::boolean FROM public.system_settings WHERE key='display_names_enabled'), true);
+
+CREATE OR REPLACE FUNCTION public.owner_set_display_names_enabled(_enabled boolean)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+  IF NOT public.is_owner() THEN RAISE EXCEPTION 'Huna ruhusa'; END IF;
+  INSERT INTO public.system_settings(key,value,updated_at)
+    VALUES ('display_names_enabled',to_jsonb(_enabled),now())
+    ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=now();
+  UPDATE public.messages msg SET sender_label =
+    CASE WHEN _enabled AND mem.display_name_visible AND mem.display_name IS NOT NULL
+      THEN mem.display_name || ' · ' || pi.label ELSE pi.label END
+  FROM public.members mem JOIN public.public_identities pi ON pi.member_id=mem.id
+  WHERE msg.member_id=mem.id;
+  INSERT INTO public.audit_events(action,target_type,details)
+    VALUES ('member.display_names_global','settings',jsonb_build_object('enabled',_enabled));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.owner_set_member_name_visible(_label text,_visible boolean)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE mid uuid;
+DECLARE enabled boolean;
+BEGIN
+  IF NOT public.is_owner() THEN RAISE EXCEPTION 'Huna ruhusa'; END IF;
+  SELECT member_id INTO mid FROM public.public_identities WHERE label=upper(trim(_label));
+  IF mid IS NULL THEN RAISE EXCEPTION 'Utambulisho haujapatikana'; END IF;
+  UPDATE public.members SET display_name_visible=_visible WHERE id=mid;
+  SELECT coalesce((value #>> '{}')::boolean,true) INTO enabled
+    FROM public.system_settings WHERE key='display_names_enabled';
+  UPDATE public.messages msg SET sender_label =
+    CASE WHEN coalesce(enabled,true) AND _visible AND mem.display_name IS NOT NULL
+      THEN mem.display_name || ' · ' || pi.label ELSE pi.label END
+  FROM public.members mem JOIN public.public_identities pi ON pi.member_id=mem.id
+  WHERE msg.member_id=mid AND mem.id=mid;
+  INSERT INTO public.audit_events(action,target_type,target_id,details)
+    VALUES ('member.display_name_visibility','member',_label,jsonb_build_object('visible',_visible));
+END $$;
