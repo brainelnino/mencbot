@@ -41,7 +41,7 @@ export function BrandContentPanel() {
   const members = useQuery({ queryKey: ["exempt-members"], queryFn: async () => {
     const { data, error } = await supabase.from("members").select("id,can_send_restricted,display_name,display_name_visible,display_name_set_at,public_identities(label)").eq("status", "active");
     if (error) throw error;
-    return (data ?? []).map((m) => ({ id: m.id, exempt: m.can_send_restricted, displayName: m.display_name, nameVisible: m.display_name_visible, nameSet: !!m.display_name_set_at, label: (m.public_identities as { label: string } | null)?.label ?? "" }))
+    return (data ?? []).map((m) => ({ id: m.id, exempt: m.can_send_restricted, displayName: m.display_name, nameVisible: m.display_name_visible, label: (m.public_identities as { label: string } | null)?.label ?? "" }))
       .filter((m) => m.label).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
   } });
   const [pick, setPick] = useState("");
