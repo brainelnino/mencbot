@@ -44,6 +44,8 @@ BEGIN
 
   UPDATE public.members SET display_name = clean_name, display_name_set_at = now()
     WHERE id = mid;
+  UPDATE public.messages msg SET sender_label = clean_name || ' · ' || pi.label
+    FROM public.public_identities pi WHERE msg.member_id = mid AND pi.member_id = mid;
 
   RETURN QUERY
     SELECT pi.label FROM public.public_identities pi WHERE pi.member_id = mid;
