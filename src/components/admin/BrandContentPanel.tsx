@@ -39,12 +39,27 @@ export function BrandContentPanel() {
   });
 
   const members = useQuery({ queryKey: ["exempt-members"], queryFn: async () => {
-    const { data, error } = await supabase.from("members").select("id,can_send_restricted,public_identities(label)").eq("status", "active");
+    const { data, error } = await supabase.from("members").select("id,can_send_restricted,display_name,display_name_visible,display_name_set_at,public_identities(label)").eq("status", "active");
     if (error) throw error;
-    return (data ?? []).map((m) => ({ id: m.id, exempt: m.can_send_restricted, label: (m.public_identities as { label: string } | null)?.label ?? "" }))
+    return (data ?? []).map((m) => ({ id: m.id, exempt: m.can_send_restricted, displayName: m.display_name, nameVisible: m.display_name_visible, nameSet: !!m.display_name_set_at, label: (m.public_identities as { label: string } | null)?.label ?? "" }))
       .filter((m) => m.label).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
   } });
   const [pick, setPick] = useState("");
+  const displayNames = useQuery({ queryKey: ["display-names-enabled"], queryFn: async () => {
+    const { data, error } = await supabase.from("system_settings").select("value").eq("key", "display_names_enabled").maybeSingle();
+    if (error) throw error;
+    return data?.value !== false;
+  } });
+  const setDisplayNames = useMutation({
+    mutationFn: async (enabled: boolean) => { const { error } = await supabase.rpc("owner_set_display_names_enabled", { _enabled: enabled }); if (error) throw error; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["display-names-enabled"] }); qc.invalidateQueries({ queryKey: ["exempt-members"] }); toast.success("Mipangilio ya majina imehifadhiwa"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const setMemberName = useMutation({
+    mutationFn: async ({ label, visible }: { label: string; visible: boolean }) => { const { error } = await supabase.rpc("owner_set_member_name_visible", { _label: label, _visible: visible }); if (error) throw error; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["exempt-members"] }); toast.success("Mwonekano wa jina umebadilishwa"); },
+    onError: (e) => toast.error(e.message),
+  });
   const exempt = useMutation({
     mutationFn: async ({ id, on }: { id: string; on: boolean }) => { const { error } = await supabase.rpc("set_member_exempt", { _member_id: id, _exempt: on }); if (error) throw error; },
     onSuccess: () => { setPick(""); qc.invalidateQueries({ queryKey: ["exempt-members"] }); },
@@ -61,6 +76,24 @@ export function BrandContentPanel() {
           <Input className="max-w-xs" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} aria-label="Jina la mfumo" />
           <Button onClick={() => rename.mutate()} disabled={rename.isPending || name.trim() === brand}>Badili jina</Button>
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-sm font-semibold">Majina ya wanachama</h2>
+        <p className="mb-3 text-xs text-muted-foreground">Wanachama wanaweza kuweka jina mara moja kwa /jina. Ukizima, utambulisho wa namba/herufi pekee ndio utaonekana.</p>
+        <div className="mb-3 flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-sm">
+          <span>Ruhusu majina kuonekana kwa wote</span>
+          <Switch checked={displayNames.data ?? false} disabled={displayNames.isLoading || setDisplayNames.isPending} onCheckedChange={(v) => setDisplayNames.mutate(v)} aria-label="Ruhusu majina ya wanachama" />
+        </div>
+        <ul className="flex flex-col gap-2">
+          {list.filter((m) => m.displayName).map((m) => (
+            <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-sm">
+              <span><span className="identity-chip">{m.label}</span> · {m.displayName}</span>
+              <Switch checked={m.nameVisible} disabled={setMemberName.isPending} onCheckedChange={(visible) => setMemberName.mutate({ label: m.label, visible })} aria-label={`Onyesha jina la ${m.label}`} />
+            </li>
+          ))}
+          {!list.some((m) => m.displayName) && <li className="text-xs text-muted-foreground">Hakuna mwanachama aliyeweka jina bado.</li>}
+        </ul>
       </section>
 
       <section>
