@@ -163,7 +163,7 @@ END $$;
 CREATE OR REPLACE FUNCTION public.guard_member_display_name_fields()
 RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$
 BEGIN
-  IF coalesce(auth.role(),'') <> 'service_role'
+  IF current_user NOT IN ('postgres', 'service_role')
      AND (NEW.display_name IS DISTINCT FROM OLD.display_name
        OR NEW.display_name_set_at IS DISTINCT FROM OLD.display_name_set_at
        OR NEW.display_name_visible IS DISTINCT FROM OLD.display_name_visible) THEN
