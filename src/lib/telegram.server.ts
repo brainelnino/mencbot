@@ -206,7 +206,7 @@ export async function handleUpdate(update: TgUpdate) {
           break;
         }
         const label = data?.[0]?.identity_label;
-        await tg("sendMessage", { chat_id: c.chatId, text: `✅ Jina lako limehifadhiwa.\n${c.displayName} · ${label ?? "ID yako"}\n\nKumbuka: jina linaweza kuwekwa mara moja tu. Unaweza kutumia /utambulisho kuona utambulisho wako.` });
+        await tg("sendMessage", { chat_id: c.chatId, text: `✅ Jina lako limehifadhiwa.\n${c.displayName}\n\nKumbuka: jina linaweza kuwekwa mara moja tu. Unaweza kutumia /utambulisho kuona utambulisho wako.` });
         break;
       }
       case "identity": {
