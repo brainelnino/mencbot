@@ -131,10 +131,31 @@ async function nickOfUser(userId: number): Promise<string | null> {
   return typeof v?.name === "string" && v.name ? v.name : null;
 }
 
-/** "12" + jina → "12 · Juma" (jina lililohifadhiwa kwenye ujumbe wakati ulipotumwa). */
+// ---- Jinsia (🟢 mwanamke, 🔴 mwanaume): huulizwa mara moja wakati wa kujisajili ----
+
+type Gender = "f" | "m";
+const GENDER_EMOJI: Record<Gender, string> = { f: "🟢", m: "🔴" };
+
+async function genderOfUser(userId: number): Promise<Gender | null> {
+  const v = await getSetting<{ g?: string }>(`gender:${userId}`);
+  return v?.g === "f" || v?.g === "m" ? v.g : null;
+}
+
+const GENDER_QUESTION = "👋 Swali moja tu kabla ya kuanza:\n\n🟢 Mwanamke\n🔴 Mwanaume\n\nBonyeza chaguo lako. Rangi hiyo itaonekana kando ya namba yako, na haibadiliki baadaye.";
+const genderKeyboard = { inline_keyboard: [[{ text: "🟢 Mwanamke", callback_data: "g:f" }, { text: "🔴 Mwanaume", callback_data: "g:m" }]] };
+
+/**
+ * Muonekano wa utambulisho:
+ *  - ana jinsia na jina → "🟢12 · Juma"
+ *  - hana jinsia, ana jina → "12 · Juma"
+ *  - ana jinsia tu → "🟢12"
+ * Jina na jinsia vilivyohifadhiwa kwenye ujumbe wakati ulipotumwa (`nick`, `g`).
+ */
 function labelWithNick(label: string, ref: unknown) {
-  const n = (ref as { nick?: unknown } | null)?.nick;
-  return typeof n === "string" && n ? `${label} · ${n}` : label;
+  const r = ref as { nick?: unknown; g?: unknown } | null;
+  const g = r?.g === "f" || r?.g === "m" ? GENDER_EMOJI[r.g] : "";
+  const n = typeof r?.nick === "string" && r.nick ? ` · ${r.nick}` : "";
+  return `${g}${label}${n}`;
 }
 
 const NICK_RE = /^[\p{L}\p{M}][\p{L}\p{M} .'’-]{1,19}$/u;
@@ -153,22 +174,28 @@ const backKeyboard = { inline_keyboard: [[{ text: "⬅️ Rudi", callback_data: 
 
 async function renderMenu(userId: number, isNew = false) {
   const db = await admin();
-  const [{ data: mem }, nick, silent] = await Promise.all([
+  const [{ data: mem }, nick, silent, gender] = await Promise.all([
     db.from("members").select("public_identities(label)").eq("telegram_user_id", userId).maybeSingle(),
     nickOfUser(userId),
     isSilent(userId),
+    genderOfUser(userId),
   ]);
   const label = (mem?.public_identities as { label: string } | null)?.label ?? "?";
-  const text = `🏠 <b>Menyu</b>\n🆔 Wewe ni <b>${escapeHtml(label)}</b>${nick ? ` · ${escapeHtml(nick)}` : ""}\n${isNew ? "\n💡 Ukiona ujumbe ni mwingi, bonyeza 🔔 Kimya.\n" : ""}\nChagua 👇`;
+  const shown = labelWithNick(label, { nick, g: gender });
+  const text = `🏠 <b>Menyu</b>\n🆔 Wewe ni <b>${escapeHtml(shown)}</b>\n${isNew ? "\n💡 Ukiona ujumbe ni mwingi, bonyeza 🔔 Kimya.\n" : ""}\nChagua 👇`;
   return { text, markup: menuKeyboard(silent) };
 }
 
-/** Orodha ya vinavyoruhusiwa na visivyoruhusiwa kwa mtumiaji huyu, kulingana na sheria za admin. */
-async function permissionsText(canSend: Parameters<typeof contentRejection>[1]) {
+/**
+ * Orodha ya vinavyoruhusiwa na visivyoruhusiwa, kulingana na sheria za admin.
+ * Inaonyesha sheria za wanachama wa kawaida; akaunti iliyosamehewa (exempt) hupata maelezo ya ziada.
+ */
+async function permissionsText(exempt: boolean) {
   const db = await admin();
   const { data: policyRow } = await db.from("system_settings").select("value").eq("key", "content_policy").maybeSingle();
   const policy = parsePolicy(policyRow?.value);
-  const ok = (media: MediaType | null, link = false, phone = false) => contentRejection(policy, canSend, media, link, phone) === null;
+  // false = tunaonyesha sheria za wanachama wa kawaida, si ruhusa ya akaunti iliyosamehewa.
+  const ok = (media: MediaType | null, link = false, phone = false) => contentRejection(policy, false, media, link, phone) === null;
   const rows: Array<[string, boolean]> = [
     ["💬 Maandishi", true],
     ["📷 Picha", ok("photo")],
@@ -181,7 +208,8 @@ async function permissionsText(canSend: Parameters<typeof contentRejection>[1]) 
     ["🔗 Link", ok(null, true, false)],
     ["📞 Namba za simu", ok(null, false, true)],
   ];
-  return `🔐 <b>Ruhusa zako</b>\n\n${rows.map(([n, a]) => `${a ? "✅" : "🚫"} ${n}`).join("\n")}\n\n✅ unaruhusiwa · 🚫 imezuiwa kwa sasa`;
+  const note = exempt ? "\n\n⭐ <i>Wewe umesamehewa: unaweza kutuma kila kitu. Orodha hii ni ya wanachama wa kawaida.</i>" : "";
+  return `🔐 <b>Ruhusa zako</b>\n\n${rows.map(([n, a]) => `${a ? "✅" : "🚫"} ${n}`).join("\n")}\n\n✅ unaruhusiwa · 🚫 imezuiwa kwa sasa${note}`;
 }
 
 const POLL_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"] as const;
@@ -268,7 +296,7 @@ export async function handleUpdate(update: TgUpdate) {
 
   // Idempotency: claim the update_id. Duplicate deliveries of processed updates are skipped.
   // Aina mpya zinahifadhiwa kama "private_other" ili safu ya update_kind isikatae thamani mpya.
-  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "unknown_command" || c.kind === "poll_vote" || c.kind === "menu" || c.kind === "silent_toggle" || c.kind === "delete_message" || c.kind === "set_name" ? "private_other" : c.kind;
+  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "unknown_command" || c.kind === "poll_vote" || c.kind === "menu" || c.kind === "silent_toggle" || c.kind === "delete_message" || c.kind === "set_name" || c.kind === "gender" ? "private_other" : c.kind;
   const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: kindForDb });
   if (insErr) {
     if (insErr.code !== "23505") throw insErr;
@@ -295,9 +323,36 @@ export async function handleUpdate(update: TgUpdate) {
         // Mtu aliyezuia bot kisha akarudi kwa /start anaanza kupokea ujumbe tena.
         await db.from("members").update({ last_active_at: new Date().toISOString() }).eq("telegram_user_id", c.userId);
         await tg("sendMessage", { chat_id: c.chatId, text: row.is_new ? `Karibu ${await brandName()} 🇹🇿\n${row.label}` : t.telegram.welcomeBack(row.label) });
+        log("info", "registered", { is_new: row.is_new });
+        // Swali la jinsia huulizwa mara moja tu (kwa wasiojibu bado).
+        if (!(await genderOfUser(c.userId))) {
+          await tg("sendMessage", { chat_id: c.chatId, text: GENDER_QUESTION, reply_markup: genderKeyboard });
+          break;
+        }
         const view = await renderMenu(c.userId, !!row.is_new);
         await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: view.text, reply_markup: view.markup });
-        log("info", "registered", { is_new: row.is_new });
+        break;
+      }
+      case "gender": {
+        const answer = (text = "") => tg("answerCallbackQuery", { callback_query_id: c.callbackId, ...(text ? { text } : {}) }).catch(() => {});
+        const { data: mem } = await db.from("members").select("id,status").eq("telegram_user_id", c.userId).maybeSingle();
+        if (!mem || mem.status !== "active") { await answer("Tuma /start kwanza."); status = "ignored"; break; }
+        if (await genderOfUser(c.userId)) {
+          await answer("Tayari umechagua.");
+          await tg("editMessageReplyMarkup", { chat_id: c.chatId, message_id: c.messageId, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+          status = "ignored"; break;
+        }
+        try {
+          await putSetting(`gender:${c.userId}`, { g: c.value });
+        } catch (e) {
+          log("error", "gender_failed", { error: e instanceof Error ? e.message : JSON.stringify(e) });
+          await answer("⚠️ Imeshindikana. Jaribu tena.");
+          break;
+        }
+        await answer(`${GENDER_EMOJI[c.value]} Imehifadhiwa`);
+        await tg("editMessageText", { chat_id: c.chatId, message_id: c.messageId, text: `✅ Umechagua ${GENDER_EMOJI[c.value]}` }).catch(() => {});
+        const view = await renderMenu(c.userId, true);
+        await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: view.text, reply_markup: view.markup });
         break;
       }
       case "menu": {
@@ -320,19 +375,20 @@ export async function handleUpdate(update: TgUpdate) {
           }
         };
         const nameView = async () => {
-          const nick = await nickOfUser(c.userId);
+          const [nick, gender] = await Promise.all([nickOfUser(c.userId), genderOfUser(c.userId)]);
+          const shown = labelWithNick(label, { g: gender });
           await show(
-            `✏️ <b>Jina</b>\n\nNamba yako: <b>${escapeHtml(label)}</b>\nJina: ${nick ? `<b>${escapeHtml(nick)}</b>` : "<i>halijawekwa</i>"}\n\n<i>Beta: jina linaongezwa kando ya namba yako (mfano ${escapeHtml(label)} · Juma). Namba haiondoki.</i>`,
+            `✏️ <b>Jina</b>\n\nNamba yako: <b>${escapeHtml(shown)}</b>\nJina: ${nick ? `<b>${escapeHtml(nick)}</b>` : "<i>halijawekwa</i>"}\n\n<i>Beta: jina linaongezwa kando ya namba yako (mfano ${escapeHtml(shown)} · Juma). Namba haiondoki.</i>`,
             { inline_keyboard: [[{ text: "✏️ Weka", callback_data: "m:setname" }, { text: "🗑 Ondoa", callback_data: "m:delname" }], [{ text: "⬅️ Rudi", callback_data: "m:home" }]] },
           );
         };
         const act = c.action;
         if (act === "me") {
           const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("member_id", mem.id).filter("telegram_chat_message_ref->>private", "is", null);
-          const nick = await nickOfUser(c.userId);
+          const [nick, gender] = await Promise.all([nickOfUser(c.userId), genderOfUser(c.userId)]);
           await answer();
           await show(
-            `🆔 <b>Mimi</b>\n\nNamba: <b>${escapeHtml(label)}</b>\nJina: ${nick ? `<b>${escapeHtml(nick)}</b>` : "<i>halijawekwa</i>"}\nUjumbe wa wazi: <b>${count ?? 0}</b>`,
+            `🆔 <b>Mimi</b>\n\nNamba: <b>${escapeHtml(labelWithNick(label, { g: gender }))}</b>\nJina: ${nick ? `<b>${escapeHtml(nick)}</b>` : "<i>halijawekwa</i>"}\nUjumbe wa wazi: <b>${count ?? 0}</b>`,
             { inline_keyboard: [[{ text: "✏️ Jina", callback_data: "m:name" }, { text: "⬅️ Rudi", callback_data: "m:home" }]] },
           );
         } else if (act === "name") {
@@ -347,7 +403,7 @@ export async function handleUpdate(update: TgUpdate) {
           await nameView();
         } else if (act === "perm") {
           await answer();
-          await show(await permissionsText(mem.can_send_restricted), backKeyboard);
+          await show(await permissionsText(!!mem.can_send_restricted), backKeyboard);
         } else if (act === "quiet") {
           const on = await toggleSilent(c.userId);
           await answer(on ? "🔕 Kimya imewashwa" : "🔔 Kimya imezimwa");
@@ -393,7 +449,8 @@ export async function handleUpdate(update: TgUpdate) {
         }
         try {
           await putSetting(`nick:${c.userId}`, { name });
-          await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: `✅ Jina limewekwa: <b>${escapeHtml(label)} · ${escapeHtml(name)}</b>\nUjumbe mpya utaonekana hivyo. Namba yako inabaki.` });
+          const gender = await genderOfUser(c.userId);
+          await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: `✅ Jina limewekwa: <b>${escapeHtml(labelWithNick(label, { nick: name, g: gender }))}</b>\nUjumbe mpya utaonekana hivyo. Namba yako inabaki.` });
         } catch (e) {
           log("error", "nick_failed", { error: e instanceof Error ? e.message : JSON.stringify(e) });
           await tg("sendMessage", { chat_id: c.chatId, text: "⚠️ Imeshindikana kuhifadhi jina. Jaribu tena baadaye." });
@@ -625,10 +682,11 @@ export async function handleUpdate(update: TgUpdate) {
           break;
         }
         if (mem.status !== "active") { status = "ignored"; break; }
-        const [{ data: policyRow }, { data: termRows, error: termError }, nick] = await Promise.all([
+        const [{ data: policyRow }, { data: termRows, error: termError }, nick, gender] = await Promise.all([
           db.from("system_settings").select("value").eq("key", "content_policy").maybeSingle(),
           db.from("blocked_terms").select("term"),
           nickOfUser(c.userId),
+          genderOfUser(c.userId),
         ]);
         const rejection = contentRejection(parsePolicy(policyRow?.value), mem.can_send_restricted, media, hasLink(c.text), hasPhone(c.text));
         if (rejection) {
@@ -656,7 +714,7 @@ export async function handleUpdate(update: TgUpdate) {
         ]);
         if (route.kind === "private") {
           await sendPrivateReply({
-            updateId: update.update_id, memberId: mem.id, senderLabel: label, senderNick: nick, chatId: c.chatId, messageId: c.messageId,
+            updateId: update.update_id, memberId: mem.id, senderLabel: label, senderNick: nick, senderGender: gender, chatId: c.chatId, messageId: c.messageId,
             media, text: c.text, entities: c.entities, to: route,
           });
           await touch();
@@ -664,7 +722,7 @@ export async function handleUpdate(update: TgUpdate) {
         }
         const { error } = await db.from("messages").upsert({
           member_id: mem.id, sender_label: label, kind: media === "photo" ? "image" : "text", body: c.text || null,
-          reply_to_id: null, telegram_chat_message_ref: { message_id: c.messageId, chat_id: c.chatId, media, entities: c.entities, ...(nick ? { nick } : {}) },
+          reply_to_id: null, telegram_chat_message_ref: { message_id: c.messageId, chat_id: c.chatId, media, entities: c.entities, ...(nick ? { nick } : {}), ...(gender ? { g: gender } : {}) },
           source_update_id: update.update_id, moderation_status: "pending",
           publication_status: "unpublished", processing_status: "awaiting_moderation",
         }, { onConflict: "source_update_id", ignoreDuplicates: true });
@@ -1033,7 +1091,7 @@ async function resolveReplyRoute(memberId: string, chatId: number, replyMessageI
 
 /** Hutuma jibu la siri moja kwa moja kwa mwenye ujumbe (bila kupitia usambazaji kwa wote). */
 async function sendPrivateReply(args: {
-  updateId: number; memberId: string; senderLabel: string; senderNick: string | null; chatId: number; messageId: number;
+  updateId: number; memberId: string; senderLabel: string; senderNick: string | null; senderGender: Gender | null; chatId: number; messageId: number;
   media: string | null; text: string; entities: TgEntity[]; to: Extract<ReplyRoute, { kind: "private" }>;
 }) {
   const db = await admin();
@@ -1045,8 +1103,8 @@ async function sendPrivateReply(args: {
     return;
   }
 
-  const shownSender = args.senderNick ? `${args.senderLabel} · ${args.senderNick}` : args.senderLabel;
-  const refBase = { message_id: args.messageId, chat_id: args.chatId, media: args.media, entities: args.entities, ...(args.senderNick ? { nick: args.senderNick } : {}) };
+  const shownSender = labelWithNick(args.senderLabel, { nick: args.senderNick, g: args.senderGender });
+  const refBase = { message_id: args.messageId, chat_id: args.chatId, media: args.media, entities: args.entities, ...(args.senderNick ? { nick: args.senderNick } : {}), ...(args.senderGender ? { g: args.senderGender } : {}) };
   const { error: upsertError } = await db.from("messages").upsert({
     member_id: args.memberId, sender_label: args.senderLabel, kind: args.media === "photo" ? "image" : "text", body: args.text || null,
     reply_to_id: args.to.parentId,
