@@ -57,6 +57,7 @@ export function normalizeEntities(list: unknown, lead = 0): TgEntity[] {
 export type Classified =
   | { kind: "start"; userId: number; chatId: number }
   | { kind: "menu"; userId: number; chatId: number; messageId: number | null; callbackId: string | null; action: string }
+  | { kind: "gender"; userId: number; chatId: number; messageId: number; callbackId: string; value: "f" | "m" }
   | { kind: "silent_toggle"; userId: number; chatId: number }
   | { kind: "delete_message"; userId: number; chatId: number; messageId: number; replyMessageId: number | null }
   | { kind: "set_name"; userId: number; chatId: number; messageId: number; name: string }
@@ -99,6 +100,10 @@ export function classifyUpdate(u: TgUpdate): Classified {
     }
     if (cb.data === "a:d" && cb.message && cb.message.chat.type === "private") {
       return { kind: "announce_details", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, callbackId: cb.id };
+    }
+    const gm = /^g:(f|m)$/.exec(cb.data ?? "");
+    if (gm?.[1] && cb.message && cb.message.chat.type === "private") {
+      return { kind: "gender", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, callbackId: cb.id, value: gm[1] as "f" | "m" };
     }
     const mm = /^m:(me|name|setname|delname|perm|quiet|hist|search|home)$/.exec(cb.data ?? "");
     if (mm?.[1] && cb.message && cb.message.chat.type === "private") {
