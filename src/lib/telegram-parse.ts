@@ -11,7 +11,7 @@ export type TgUpdate = {
     entities?: unknown[];
     caption_entities?: unknown[];
     video?: unknown; document?: unknown; voice?: unknown; audio?: unknown; sticker?: unknown; animation?: unknown; video_note?: unknown;
-    reply_to_message?: { message_id: number };
+    reply_to_message?: { message_id: number; text?: string; from?: { id: number; is_bot?: boolean } };
   };
   message_reaction?: {
     message_id: number;
@@ -29,6 +29,10 @@ export type TgUpdate = {
 };
 
 export type TgEntity = { type: string; offset: number; length: number; unix_time?: number; date_time_format?: string };
+
+/** Maandishi ya mwanzo ya maombi ya bot (hutumika kutambua jibu la mtumiaji kwa ombi hilo). */
+export const NAME_PROMPT = "✏️ Andika jina lako jipya";
+export const SEARCH_PROMPT = "🔎 Andika neno la kutafuta";
 
 const KEEP = ["bold", "italic", "underline", "strikethrough", "spoiler", "code", "pre", "blockquote", "expandable_blockquote", "date_time"];
 
@@ -52,6 +56,10 @@ export function normalizeEntities(list: unknown, lead = 0): TgEntity[] {
 
 export type Classified =
   | { kind: "start"; userId: number; chatId: number }
+  | { kind: "menu"; userId: number; chatId: number; messageId: number | null; callbackId: string | null; action: string }
+  | { kind: "silent_toggle"; userId: number; chatId: number }
+  | { kind: "delete_message"; userId: number; chatId: number; messageId: number; replyMessageId: number | null }
+  | { kind: "set_name"; userId: number; chatId: number; messageId: number; name: string }
   | { kind: "history"; userId: number; chatId: number; messageId: number | null; callbackId: string | null }
   | { kind: "search"; userId: number; chatId: number; query: string }
   | { kind: "admin_pin"; userId: number; chatId: number; action: "pin" | "unpin"; replyMessageId: number | null }
@@ -92,6 +100,10 @@ export function classifyUpdate(u: TgUpdate): Classified {
     if (cb.data === "a:d" && cb.message && cb.message.chat.type === "private") {
       return { kind: "announce_details", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, callbackId: cb.id };
     }
+    const mm = /^m:(me|name|setname|delname|perm|quiet|hist|search|home)$/.exec(cb.data ?? "");
+    if (mm?.[1] && cb.message && cb.message.chat.type === "private") {
+      return { kind: "menu", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, callbackId: cb.id, action: mm[1] };
+    }
     const pv = /^p:([0-3])$/.exec(cb.data ?? "");
     if (pv?.[1] && cb.message && cb.message.chat.type === "private") {
       return { kind: "poll_vote", userId: cb.from.id, chatId: cb.message.chat.id, messageId: cb.message.message_id, option: Number(pv[1]), callbackId: cb.id };
@@ -114,6 +126,9 @@ export function classifyUpdate(u: TgUpdate): Classified {
   if (m.chat.type === "private") {
     if (!m.from) return { kind: "ignored", reason: "no_sender" };
     if (/^\/start(@\w+)?(\s|$)/.test(text)) return { kind: "start", userId: m.from.id, chatId: m.chat.id };
+    if (/^\/(menu|menyu)(?:@\w+)?\s*$/i.test(text)) return { kind: "menu", userId: m.from.id, chatId: m.chat.id, messageId: null, callbackId: null, action: "open" };
+    if (/^\/(kimya|silent)(?:@\w+)?\s*$/i.test(text)) return { kind: "silent_toggle", userId: m.from.id, chatId: m.chat.id };
+    if (/^\/(futa|delete)(?:@\w+)?\s*$/i.test(text)) return { kind: "delete_message", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     if (/^\/(historia|history)(@\w+)?\s*$/i.test(text)) return { kind: "history", userId: m.from.id, chatId: m.chat.id, messageId: null, callbackId: null };
     const sq = /^\/(tafuta|search)(?:@\w+)?(?:\s+([\s\S]+))?$/i.exec(text);
     if (sq) return { kind: "search", userId: m.from.id, chatId: m.chat.id, query: (sq[2] ?? "").trim().slice(0, 100) };
@@ -127,6 +142,12 @@ export function classifyUpdate(u: TgUpdate): Classified {
     if (an) return { kind: "admin_announce", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, media: null, raw: (an[1] ?? "").trim().slice(0, 4000) };
     const cmd = /^\/(admin|zuia|rudisha)(?:@\w+)?(?:\s+([A-Za-z]|[0-9]+))?$/.exec(text);
     if (cmd) return { kind: "admin_command", userId: m.from.id, chatId: m.chat.id, command: cmd[1] as "admin" | "zuia" | "rudisha", label: cmd[2]?.toUpperCase() };
+    // Jibu la mtumiaji kwa ombi la bot (jina jipya, neno la kutafuta).
+    const rp = m.reply_to_message;
+    if (text && rp?.from?.is_bot && typeof rp.text === "string") {
+      if (rp.text.startsWith(NAME_PROMPT)) return { kind: "set_name", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, name: text.slice(0, 60) };
+      if (rp.text.startsWith(SEARCH_PROMPT)) return { kind: "search", userId: m.from.id, chatId: m.chat.id, query: text.slice(0, 100) };
+    }
     // Ujumbe unaoanza na /neno lisilojulikana: haupaswi kusambazwa kwa wengine.
     const unk = /^\/([A-Za-z0-9_]{1,32})(?:@\w+)?(?:\s|$)/.exec(text);
     if (unk?.[1]) return { kind: "unknown_command", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, command: unk[1] };
