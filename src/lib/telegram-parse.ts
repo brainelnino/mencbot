@@ -58,6 +58,7 @@ export type Classified =
   | { kind: "start"; userId: number; chatId: number }
   | { kind: "menu"; userId: number; chatId: number; messageId: number | null; callbackId: string | null; action: string }
   | { kind: "gender"; userId: number; chatId: number; messageId: number; callbackId: string; value: "f" | "m" }
+  | { kind: "calc"; userId: number; chatId: number; messageId: number; expr: string }
   | { kind: "silent_toggle"; userId: number; chatId: number }
   | { kind: "delete_message"; userId: number; chatId: number; messageId: number; replyMessageId: number | null }
   | { kind: "set_name"; userId: number; chatId: number; messageId: number; name: string }
@@ -132,6 +133,9 @@ export function classifyUpdate(u: TgUpdate): Classified {
     if (!m.from) return { kind: "ignored", reason: "no_sender" };
     if (/^\/start(@\w+)?(\s|$)/.test(text)) return { kind: "start", userId: m.from.id, chatId: m.chat.id };
     if (/^\/(menu|menyu)(?:@\w+)?\s*$/i.test(text)) return { kind: "menu", userId: m.from.id, chatId: m.chat.id, messageId: null, callbackId: null, action: "open" };
+    // Kikokotoo: /hesabu 25*4 au "= 25*4". Jibu ni la mtumaji pekee, halisambazwi.
+    const calc = /^\/(hesabu|calc)(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(text) ?? /^=\s*(?=[\s\S]*\d)([\s\S]+)$/.exec(text);
+    if (calc) return { kind: "calc", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, expr: (calc[2] ?? (/^=/.test(text) ? calc[1] : "") ?? "").trim().slice(0, 200) };
     if (/^\/(kimya|silent)(?:@\w+)?\s*$/i.test(text)) return { kind: "silent_toggle", userId: m.from.id, chatId: m.chat.id };
     if (/^\/(futa|delete)(?:@\w+)?\s*$/i.test(text)) return { kind: "delete_message", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     if (/^\/(historia|history)(@\w+)?\s*$/i.test(text)) return { kind: "history", userId: m.from.id, chatId: m.chat.id, messageId: null, callbackId: null };
@@ -212,6 +216,75 @@ export function hasPhone(text: string): boolean {
 /** True when text contains a link or a phone number (any country format). */
 export function hasBlockedContent(text: string): boolean {
   return hasLink(text) || hasPhone(text);
+}
+
+/**
+ * Kikokotoo salama (hakuna eval): + - * / ^ % na mabano; x na × ni kuzidisha, ÷ ni kugawa.
+ * "200+10%" = 220 (asilimia ya kushoto). Hurudisha null ikiwa usemi si sahihi au jibu si namba.
+ */
+export function calculate(input: string): number | null {
+  const src = input.replace(/[\s,]/g, "").replace(/[x×]/gi, "*").replace(/÷/g, "/");
+  if (!src || src.length > 100 || !/^[0-9+\-*/^%().]+$/.test(src)) return null;
+  type V = { v: number; pct: boolean };
+  let i = 0;
+  const bad = (): never => { throw new Error("bad"); };
+  const primary = (): V => {
+    if (src[i] === "(") {
+      i++;
+      const r = expr();
+      if (src[i] !== ")") bad();
+      i++;
+      return { v: r.v, pct: false };
+    }
+    const m = /^(\d+\.?\d*|\.\d+)/.exec(src.slice(i));
+    if (!m) return bad();
+    i += m[0].length;
+    return { v: Number(m[0]), pct: false };
+  };
+  const postfix = (): V => {
+    let a = primary();
+    while (src[i] === "%") { i++; a = { v: a.v / 100, pct: true }; }
+    return a;
+  };
+  const unary = (): V => {
+    if (src[i] === "-") { i++; const a = unary(); return { v: -a.v, pct: a.pct }; }
+    if (src[i] === "+") { i++; return unary(); }
+    return postfix();
+  };
+  const power = (): V => {
+    const base = unary();
+    if (src[i] !== "^") return base;
+    i++;
+    const e = power();
+    if (Math.abs(e.v) > 1000) bad();
+    return { v: base.v ** e.v, pct: false };
+  };
+  const term = (): V => {
+    let a = power();
+    while (src[i] === "*" || src[i] === "/") {
+      const op = src[i++];
+      const b = power();
+      a = { v: op === "*" ? a.v * b.v : a.v / b.v, pct: false };
+    }
+    return a;
+  };
+  const expr = (): V => {
+    let a = term();
+    while (src[i] === "+" || src[i] === "-") {
+      const op = src[i++];
+      const b = term();
+      const delta = b.pct ? a.v * b.v : b.v;
+      a = { v: op === "+" ? a.v + delta : a.v - delta, pct: false };
+    }
+    return a;
+  };
+  try {
+    const r = expr();
+    if (i !== src.length || !Number.isFinite(r.v)) return null;
+    return r.v;
+  } catch {
+    return null;
+  }
 }
 
 /** Returns the first blocked term found in text (whole-word, case-insensitive), or null. */
