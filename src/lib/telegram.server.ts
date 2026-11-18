@@ -1,5 +1,5 @@
 // Server-only Telegram service. Never import from browser code.
-import { NAME_PROMPT, SEARCH_PROMPT, classifyUpdate, findBlockedTerm, hasLink, hasPhone, normalizeEntities, type MediaType, type TgEntity, type TgUpdate } from "./telegram-parse";
+import { NAME_PROMPT, SEARCH_PROMPT, calculate, classifyUpdate, findBlockedTerm, hasLink, hasPhone, normalizeEntities, type MediaType, type TgEntity, type TgUpdate } from "./telegram-parse";
 import { contentRejection, parsePolicy } from "./content-policy";
 import { t } from "./i18n";
 import { buildMessageHtml, entitiesToHtml, escapeHtml, telegramMessagePayload, telegramStoredMessageText, voteKeyboard, withReactionFooter } from "./telegram-format";
@@ -182,7 +182,7 @@ async function renderMenu(userId: number, isNew = false) {
   ]);
   const label = (mem?.public_identities as { label: string } | null)?.label ?? "?";
   const shown = labelWithNick(label, { nick, g: gender });
-  const text = `🏠 <b>Menyu</b>\n🆔 Wewe ni <b>${escapeHtml(shown)}</b>\n${isNew ? "\n💡 Ukiona ujumbe ni mwingi, bonyeza 🔔 Kimya.\n" : ""}\nChagua 👇`;
+  const text = `🏠 <b>Menyu</b>\n🆔 Wewe ni <b>${escapeHtml(shown)}</b>\n${isNew ? "\n💡 Ukiona ujumbe ni mwingi, bonyeza 🔔 Kimya.\n" : ""}\n🧮 Hesabu kimya kimya: <code>= 25*4+10</code>\n\nChagua 👇`;
   return { text, markup: menuKeyboard(silent) };
 }
 
@@ -296,7 +296,7 @@ export async function handleUpdate(update: TgUpdate) {
 
   // Idempotency: claim the update_id. Duplicate deliveries of processed updates are skipped.
   // Aina mpya zinahifadhiwa kama "private_other" ili safu ya update_kind isikatae thamani mpya.
-  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "unknown_command" || c.kind === "poll_vote" || c.kind === "menu" || c.kind === "silent_toggle" || c.kind === "delete_message" || c.kind === "set_name" || c.kind === "gender" ? "private_other" : c.kind;
+  const kindForDb = c.kind === "history" || c.kind === "search" || c.kind === "admin_pin" || c.kind === "admin_poll" || c.kind === "admin_diag" || c.kind === "admin_announce" || c.kind === "announce_details" || c.kind === "unknown_command" || c.kind === "poll_vote" || c.kind === "menu" || c.kind === "silent_toggle" || c.kind === "delete_message" || c.kind === "set_name" || c.kind === "gender" || c.kind === "calc" ? "private_other" : c.kind;
   const { error: insErr } = await db.from("telegram_updates").insert({ update_id: update.update_id, update_kind: kindForDb });
   if (insErr) {
     if (insErr.code !== "23505") throw insErr;
@@ -422,6 +422,24 @@ export async function handleUpdate(update: TgUpdate) {
         }
         break;
       }
+      case "calc": {
+        const { data: mem } = await db.from("members").select("id,status").eq("telegram_user_id", c.userId).maybeSingle();
+        if (!mem) { await tg("sendMessage", { chat_id: c.chatId, text: "Tuma /start kwanza ili kujisajili." }); break; }
+        if (mem.status !== "active") { status = "ignored"; break; }
+        const reply = { reply_parameters: { message_id: c.messageId, allow_sending_without_reply: true } };
+        if (!c.expr) {
+          await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: "🧮 <b>Kikokotoo (siri yako)</b>\n\nAndika <code>/hesabu 25*4+10</code> au <code>= 25*4+10</code>.\nUnaweza kutumia + − × ÷ ^ % na mabano. Mfano: <code>= 200+10%</code>.\nJibu linakuja kwako pekee, hakuna anayeona.", ...reply });
+          break;
+        }
+        const result = calculate(c.expr);
+        if (result === null) {
+          await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: "⚠️ Siwezi kuhesabu hilo. Mfano: <code>/hesabu (25+5)*4</code>", ...reply });
+          break;
+        }
+        const shown = Math.abs(result) >= 1e15 || (result !== 0 && Math.abs(result) < 1e-9) ? result.toExponential(6) : result.toLocaleString("en-US", { maximumFractionDigits: 8 });
+        await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: `🧮 <code>${escapeHtml(c.expr)}</code>\n= <b>${escapeHtml(shown)}</b>\n\n<i>🔒 Wewe pekee ndiye unayeona.</i>`, ...reply });
+        break;
+      }
       case "silent_toggle": {
         const { data: mem } = await db.from("members").select("id,status").eq("telegram_user_id", c.userId).maybeSingle();
         if (!mem) { await tg("sendMessage", { chat_id: c.chatId, text: "Tuma /start kwanza ili kujisajili." }); break; }
@@ -484,7 +502,7 @@ export async function handleUpdate(update: TgUpdate) {
         const line = RIP_LINES[Math.floor(Math.random() * RIP_LINES.length)]!;
         await tg("sendMessage", {
           chat_id: c.chatId, parse_mode: "HTML",
-          text: `${line}\n\n<code>/${escapeHtml(c.command)}</code> haipo, kwa hiyo haikutumwa kwa mtu yeyote.\nZilizopo: /menu · /historia · /tafuta · /kimya · /futa`,
+          text: `${line}\n\n<code>/${escapeHtml(c.command)}</code> haipo, kwa hiyo haikutumwa kwa mtu yeyote.\nZilizopo: /menu · /historia · /tafuta · /kimya · /futa · /hesabu`,
           reply_parameters: { message_id: c.messageId, allow_sending_without_reply: true },
         });
         status = "ignored";
