@@ -11,6 +11,7 @@ export type TgUpdate = {
     entities?: unknown[];
     caption_entities?: unknown[];
     video?: unknown; document?: unknown; voice?: unknown; audio?: unknown; sticker?: unknown; animation?: unknown; video_note?: unknown;
+    forward_origin?: unknown; forward_date?: number;
     reply_to_message?: { message_id: number; text?: string; from?: { id: number; is_bot?: boolean } };
   };
   message_reaction?: {
@@ -58,7 +59,7 @@ export type Classified =
   | { kind: "start"; userId: number; chatId: number }
   | { kind: "menu"; userId: number; chatId: number; messageId: number | null; callbackId: string | null; action: string }
   | { kind: "gender"; userId: number; chatId: number; messageId: number; callbackId: string; value: "f" | "m" }
-  | { kind: "calc"; userId: number; chatId: number; messageId: number; expr: string }
+  | { kind: "calc"; userId: number; chatId: number; messageId: number; expr: string; auto?: boolean }
   | { kind: "silent_toggle"; userId: number; chatId: number }
   | { kind: "delete_message"; userId: number; chatId: number; messageId: number; replyMessageId: number | null }
   | { kind: "set_name"; userId: number; chatId: number; messageId: number; name: string }
@@ -160,6 +161,10 @@ export function classifyUpdate(u: TgUpdate): Classified {
     // Ujumbe unaoanza na /neno lisilojulikana: haupaswi kusambazwa kwa wengine.
     const unk = /^\/([A-Za-z0-9_]{1,32})(?:@\w+)?(?:\s|$)/.exec(text);
     if (unk?.[1]) return { kind: "unknown_command", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, command: unk[1] };
+    // Hesabu pekee (tarakimu na alama tu), bila Reply wala forward: jibu la siri kwa mtumaji, halisambazwi.
+    if (text && !m.reply_to_message && !m.forward_origin && !m.forward_date && looksLikeMath(text)) {
+      return { kind: "calc", userId: m.from.id, chatId: m.chat.id, messageId: m.message_id, expr: text.slice(0, 200), auto: true };
+    }
     if (text) return { kind: "private_text", userId: m.from.id, chatId: m.chat.id, text: text.slice(0, 4000), entities: normalizeEntities(m.entities, raw.length - raw.trimStart().length), messageId: m.message_id, replyMessageId: m.reply_to_message?.message_id ?? null };
     const media = detectMedia(m);
     if (media) {
@@ -285,6 +290,21 @@ export function calculate(input: string): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Utambuzi wa hesabu pekee (bila amri): ujumbe una tarakimu na alama za hesabu tu,
+ * na angalau operesheni moja kati ya namba. Herufi yoyote (hata "x") = ujumbe wa kawaida.
+ * Tarehe, namba za simu, namba pekee (123) na usemi usio sahihi (5+) si hesabu.
+ */
+export function looksLikeMath(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 100 || /\n/.test(t)) return false;
+  if (!/^[\d\s+\-*/×÷^%().,]+$/.test(t)) return false;
+  if (!/[\d)%]\s*[+\-*/×÷^]\s*[\d(.+\-]/.test(t)) return false;
+  if (/^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}$/.test(t)) return false;
+  if (/^\+[\d\s-]+$/.test(t) || /^0[\d\s-]{8,}$/.test(t)) return false;
+  return calculate(t) !== null;
 }
 
 /** Returns the first blocked term found in text (whole-word, case-insensitive), or null. */
