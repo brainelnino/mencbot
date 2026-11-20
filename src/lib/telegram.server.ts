@@ -182,7 +182,7 @@ async function renderMenu(userId: number, isNew = false) {
   ]);
   const label = (mem?.public_identities as { label: string } | null)?.label ?? "?";
   const shown = labelWithNick(label, { nick, g: gender });
-  const text = `🏠 <b>Menyu</b>\n🆔 Wewe ni <b>${escapeHtml(shown)}</b>\n${isNew ? "\n💡 Ukiona ujumbe ni mwingi, bonyeza 🔔 Kimya.\n" : ""}\n🧮 Hesabu kimya kimya: <code>= 25*4+10</code>\n\nChagua 👇`;
+  const text = `🏠 <b>Menyu</b>\n🆔 Wewe ni <b>${escapeHtml(shown)}</b>\n${isNew ? "\n💡 Ukiona ujumbe ni mwingi, bonyeza 🔔 Kimya.\n" : ""}\n🧮 Hesabu kimya kimya: <code>25*4+10</code>\n\nChagua 👇`;
   return { text, markup: menuKeyboard(silent) };
 }
 
@@ -288,6 +288,9 @@ const RIP_LINES = [
   "💀 <b>R.I.P this command</b> — mfumo haikuijua",
   "🪦 <b>R.I.P this command</b> — 404, haipo",
 ];
+
+// Kinga ya spam kwa hesabu za moja kwa moja (kwa kila seva, si kamili).
+const calcLast = new Map<number, number>();
 
 /** Processes one verified update idempotently. */
 export async function handleUpdate(update: TgUpdate) {
@@ -426,18 +429,27 @@ export async function handleUpdate(update: TgUpdate) {
         const { data: mem } = await db.from("members").select("id,status").eq("telegram_user_id", c.userId).maybeSingle();
         if (!mem) { await tg("sendMessage", { chat_id: c.chatId, text: "Tuma /start kwanza ili kujisajili." }); break; }
         if (mem.status !== "active") { status = "ignored"; break; }
+        const auto = c.auto === true;
+        if (auto) {
+          const now = Date.now();
+          if (now - (calcLast.get(c.userId) ?? 0) < 1000) { status = "ignored"; break; }
+          if (calcLast.size > 1000) calcLast.clear();
+          calcLast.set(c.userId, now);
+        }
         const reply = { reply_parameters: { message_id: c.messageId, allow_sending_without_reply: true } };
         if (!c.expr) {
-          await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: "🧮 <b>Kikokotoo (siri yako)</b>\n\nAndika <code>/hesabu 25*4+10</code> au <code>= 25*4+10</code>.\nUnaweza kutumia + − × ÷ ^ % na mabano. Mfano: <code>= 200+10%</code>.\nJibu linakuja kwako pekee, hakuna anayeona.", ...reply });
+          await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: "🧮 <b>Kikokotoo (siri yako)</b>\n\nAndika <code>/hesabu 25*4+10</code> au <code>= 25*4+10</code>, au tuma hesabu pekee kama <code>25*4+10</code>.\nUnaweza kutumia + − × ÷ ^ % na mabano. Mfano: <code>200+10%</code>.\nJibu linakuja kwako pekee, hakuna anayeona.", ...reply });
           break;
         }
         const result = calculate(c.expr);
         if (result === null) {
+          if (auto) { status = "ignored"; break; }
           await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: "⚠️ Siwezi kuhesabu hilo. Mfano: <code>/hesabu (25+5)*4</code>", ...reply });
           break;
         }
         const shown = Math.abs(result) >= 1e15 || (result !== 0 && Math.abs(result) < 1e-9) ? result.toExponential(6) : result.toLocaleString("en-US", { maximumFractionDigits: 8 });
-        await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: `🧮 <code>${escapeHtml(c.expr)}</code>\n= <b>${escapeHtml(shown)}</b>\n\n<i>🔒 Wewe pekee ndiye unayeona.</i>`, ...reply });
+        const note = auto ? "" : "\n\n<i>🔒 Wewe pekee ndiye unayeona.</i>";
+        await tg("sendMessage", { chat_id: c.chatId, parse_mode: "HTML", text: `🧮 <code>${escapeHtml(c.expr)}</code>\n= <b>${escapeHtml(shown)}</b>${note}`, ...reply });
         break;
       }
       case "silent_toggle": {
