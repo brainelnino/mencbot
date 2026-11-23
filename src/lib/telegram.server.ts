@@ -1,5 +1,5 @@
 // Server-only Telegram service. Never import from browser code.
-import { NAME_PROMPT, SEARCH_PROMPT, calculate, classifyUpdate, findBlockedTerm, hasLink, hasPhone, normalizeEntities, type MediaType, type TgEntity, type TgUpdate } from "./telegram-parse";
+import { NAME_PROMPT, SEARCH_PROMPT, calculate, classifyUpdate, findBlockedTerm, hasLink, hasPhone, hasUsername, normalizeEntities, type MediaType, type TgEntity, type TgUpdate } from "./telegram-parse";
 import { contentRejection, parsePolicy } from "./content-policy";
 import { t } from "./i18n";
 import { buildMessageHtml, entitiesToHtml, escapeHtml, telegramMessagePayload, telegramStoredMessageText, voteKeyboard, withReactionFooter } from "./telegram-format";
@@ -205,7 +205,7 @@ async function permissionsText(exempt: boolean) {
     ["🎵 Muziki", ok("audio")],
     ["🙂 Sticker", ok("sticker")],
     ["🎞 GIF", ok("animation")],
-    ["🔗 Link", ok(null, true, false)],
+    ["🔗 Link na @username", ok(null, true, false)],
     ["📞 Namba za simu", ok(null, false, true)],
   ];
   const note = exempt ? "\n\n⭐ <i>Wewe umesamehewa: unaweza kutuma kila kitu. Orodha hii ni ya wanachama wa kawaida.</i>" : "";
@@ -718,9 +718,9 @@ export async function handleUpdate(update: TgUpdate) {
           nickOfUser(c.userId),
           genderOfUser(c.userId),
         ]);
-        const rejection = contentRejection(parsePolicy(policyRow?.value), mem.can_send_restricted, media, hasLink(c.text), hasPhone(c.text));
+        const rejection = contentRejection(parsePolicy(policyRow?.value), mem.can_send_restricted, media, hasLink(c.text) || hasUsername(c.text), hasPhone(c.text));
         if (rejection) {
-          await tg("sendMessage", { chat_id: c.chatId, text: rejection === "media" ? "⚠️ Ujumbe haujatumwa: aina hii ya faili/picha hairuhusiwi kwa sasa." : "⚠️ Ujumbe haujatumwa: link na namba za simu haziruhusiwi." });
+          await tg("sendMessage", { chat_id: c.chatId, text: rejection === "media" ? "⚠️ Ujumbe haujatumwa: aina hii ya faili/picha hairuhusiwi kwa sasa." : "⚠️ Ujumbe haujatumwa: link, @username na namba za simu haziruhusiwi." });
           status = "ignored"; break;
         }
         if (termError) throw termError;
