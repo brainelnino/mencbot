@@ -212,6 +212,14 @@ export function hasLink(text: string): boolean {
   return /(https?:\/\/|www\.|t\.me\/|wa\.me\/|\b[a-z0-9-]+\.(com|net|org|tz|co|io|me|info|biz|app|xyz|link|ly|gl|site|online|africa|ke|ug)\b)/i.test(text);
 }
 
+/**
+ * @username ya Telegram (herufi ya kwanza, kisha herufi/namba/_ jumla 5–32).
+ * Tag za utambulisho (@12, @A, @B7) ni fupi au zinaanza na namba, kwa hiyo hazizuiwi.
+ */
+export function hasUsername(text: string): boolean {
+  return /(^|[^\w@])@[A-Za-z][A-Za-z0-9_]{4,31}(?![A-Za-z0-9_])/.test(text);
+}
+
 export function hasPhone(text: string): boolean {
   // 7+ digits allowing spaces, dashes, dots, brackets, optional leading +
   for (const m of text.match(/(\+?\d[\d\s().-]{5,}\d)/g) ?? []) if (m.replace(/\D/g, "").length >= 7) return true;
